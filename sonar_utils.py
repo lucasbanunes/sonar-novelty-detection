@@ -65,8 +65,6 @@ def folds_eval(eval_frames, output_path, name_prefix=''):
 def plot_data(novelty_class, folds, colors, threshold,
                 eval_frames, eval_frame_avg, eval_frame_var, noc_area_dict, output_path, name_prefix=''):
 
-        import pdb; pdb.set_trace()
-        #Noc curves
         plt.figure(figsize=(12,3))
         plt.grid(color='k', alpha=0.5, linestyle='dashed', linewidth=0.5)
         plt.plot(eval_frame_avg.loc['Trigger rate'], eval_frame_avg.loc['Nov rate'], color='k')

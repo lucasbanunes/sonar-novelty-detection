@@ -19,7 +19,7 @@ from sklearn.metrics import recall_score, accuracy_score
 LOFAR_FOLDER, OUTPUT_DIR, RAW_DATA = setup()
 
 import my_models
-import utils as sonar_utils
+import sonar_utils
 from data_analysis.model_evaluation import novelty_analysis
 from data_analysis.model_evaluation.splitters import RangedDataSplitter
 from data_analysis.utils import math_utils

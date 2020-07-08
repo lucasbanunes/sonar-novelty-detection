@@ -6,7 +6,7 @@ import tensorflow.keras as keras
 from tensorflow.keras import callbacks
 from tensorflow.keras.layers import Dense, Conv2D, Flatten, MaxPool2D
 from data_analysis.neural_networks import models, losses, metrics
-import utils as sonar_utils
+import sonar_utils
 
 class standard_model():
     is_expert_committee = False
