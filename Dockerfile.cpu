@@ -1,0 +1,36 @@
+#importing necessary packages
+FROM tensorflow/tensorflow:latest
+
+# defining useful commands
+ENV APT_INSTALL apt-get install -y
+ENV PIP_INSTALL python -m pip install --retries 10 --timeout 60
+ENV GIT_CLONE git clone --depth 10
+
+# initial update
+WORKDIR /install_paths
+RUN apt-get update && apt-get upgrade -y
+RUN ldconfig && apt-get clean && apt-get autoremove
+WORKDIR /home
+RUN rm -rf /install_paths
+
+#Building folder tree
+RUN mkdir sonar_output
+RUN mkdir datasets
+RUN mkdir data-analysis
+RUN mkdir Workspace
+
+# installing tools
+RUN $APT_INSTALL \
+    git \
+    nano 
+
+# upgrading pip (needed for tf 2.0)
+RUN pip install --upgrade pip
+RUN $PIP_INSTALL \
+    joblib \
+    matplotlib \
+    numpy \
+    pandas \
+    jupyter \
+    scikit-learn \
+    python-telegram-bot
