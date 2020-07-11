@@ -115,6 +115,87 @@ def plot_data(novelty_class, folds, colors, threshold,
         plt.savefig(fname=os.path.join(output_path, name_prefix + 'average_acc_curve.png'), dpi=200, format='png')
         plt.close()
 
+def evaluate_kfolds_committee(current_dir, folds, novelty_class, colors):
+
+    exp_eval_frames = list()
+    wrapper_eval_frames = list()
+    fold_count = 1
+
+    for fold in folds: #Here we work on each fold speratedly, inside each fold folder
+        current_dir = os.path.join(current_dir, fold)
+
+        if not os.path.isdir(current_dir):
+            current_dir, _ = os.path.split(current_dir)
+            continue
+        
+        print(f'Fold {fold_count}')
+        exp_results_frame = pd.read_csv(os.path.join(current_dir, 'committee_results_frame.csv'), header=[0,1])
+        exp_results_frame.to_csv(os.path.join(current_dir, 'exp_results_frame'), index=False)
+        exp_eval_frame = novelty_analysis.evaluate_nov_detection(exp_results_frame, 
+                                                                    filepath=os.path.join(current_dir, 'exp_eval_frame.csv'))
+        novelty_analysis.plot_noc_curve(exp_results_frame, novelty_class, filepath=os.path.join(current_dir, 'exp_noc_curve.png'))
+        novelty_analysis.plot_accuracy_curve(exp_results_frame, novelty_class, filepath=os.path.join(current_dir, 'exp_acc_curve.png'))
+        exp_eval_frames.append(exp_eval_frame)
+
+        wrapper_results_frame = pd.read_csv(os.path.join(current_dir, 'results_frame.csv'), header=[0,1])
+        wrapper_results_frame.to_csv(os.path.join(current_dir, 'wrapper_results_frame'), index=False)
+        wrapper_eval_frame = novelty_analysis.evaluate_nov_detection(wrapper_results_frame, 
+                                                                    filepath=os.path.join(current_dir, 'wrapper_eval_frame.csv'))
+        novelty_analysis.plot_noc_curve(wrapper_results_frame, novelty_class, filepath=os.path.join(current_dir, 'wrapper_noc_curve.png'))
+        novelty_analysis.plot_accuracy_curve(wrapper_results_frame, novelty_class, filepath=os.path.join(current_dir, 'wrapper_acc_curve.png'))
+        wrapper_eval_frames.append(wrapper_eval_frame)
+
+        fold_count += 1
+        current_dir, _ = os.path.split(current_dir)
+
+    print('Averaging all folds.')
+
+    exp_threshold = exp_eval_frame.columns.values.flatten()
+    exp_eval_frames_avg, exp_eval_frames_var, exp_noc_area_dict = folds_eval(exp_eval_frames, current_dir)
+    plot_data(novelty_class, fold_count, colors, exp_threshold,
+                            exp_eval_frames, exp_eval_frames_avg, exp_eval_frames_var, exp_noc_area_dict,
+                            current_dir)
+
+    wrapper_threshold = wrapper_eval_frame.columns.values.flatten()
+    wrapper_eval_frames_avg, wrapper_eval_frames_var, wrapper_noc_area_dict = folds_eval(wrapper_eval_frames, current_dir)
+    plot_data(novelty_class, fold_count, colors, wrapper_threshold,
+                            wrapper_eval_frames, wrapper_eval_frames_avg, wrapper_eval_frames_var, wrapper_noc_area_dict,
+                            current_dir)
+
+
+def evaluate_kfolds_standard(current_dir, folds, novelty_class, colors):
+
+    eval_frames = list()
+    fold_count = 1
+
+    for fold in folds: #Here we work on each fold speratedly, inside each fold folder
+        current_dir = os.path.join(current_dir, fold)
+
+        if not os.path.isdir(current_dir):
+            current_dir, _ = os.path.split(current_dir)
+            continue
+
+        print(f'Fold {fold_count}')
+        results_frame = pd.read_csv(os.path.join(current_dir, 'results_frame.csv'), header=[0,1])
+        eval_frame = novelty_analysis.evaluate_nov_detection(results_frame, 
+                                                                filepath=os.path.join(current_dir, 'eval_frame.csv'))
+
+        novelty_analysis.plot_noc_curve(results_frame, novelty_class, filepath=os.path.join(current_dir, 'noc_curve.png'))
+        novelty_analysis.plot_accuracy_curve(results_frame, novelty_class, filepath=os.path.join(current_dir, 'acc_curve.png'))
+        eval_frames.append(eval_frame)
+
+        fold_count += 1
+        current_dir, _ = os.path.split(current_dir)
+
+    print('Averaging all folds.')
+
+    threshold = eval_frame.columns.values.flatten()
+    eval_frames_avg, eval_frames_var, noc_area_dict = folds_eval(eval_frames, current_dir)
+    plot_data(novelty_class, fold_count, colors, threshold,
+                            eval_frames, eval_frames_avg, eval_frames_var, noc_area_dict,
+                            current_dir)
+
+
 class SendInitMessage:
 
     def __init__(self, bot, chat_id, prior_message=None):
