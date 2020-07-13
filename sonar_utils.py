@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import data_analysis.utils.utils as da_utils
-from data_analysis.utils import math_utils
+from data_analysis.utils import math_utils, metrics
 from data_analysis.model_evaluation import novelty_analysis
 
 def save_multi_init_log(log, output_dir):
@@ -35,21 +35,35 @@ def eval_results(classes_names, threshold, novelty_class, nov_index,
                                                 classes_names=classes_names, novelty_index=nov_index,
                                                 filepath=os.path.join(output_path, name_prefix + 'results_frame.csv'))
 
+    classf_pred = np.array(results_frame.iloc[:, 3].values, dtype=str)
+    classf_true = np.array(results_frame.loc[:, ('Labels', 'L')].values, dtype=str)
+    classf_pred = classf_pred[classf_true != 'Nov']
+    classf_true = classf_true[classf_true != 'Nov']
+    cm_frame = metrics.confusion_matrix_frame(classf_true, classf_pred, filepath = os.path.join(output_path, name_prefix + 'cm_frame.csv'))
+    metrics.plot_confusion_matrix(cm_frame, os.path.join(output_path, name_prefix + 'cm_plot.png'))
+
     evaluation_frame = novelty_analysis.evaluate_nov_detection(results_frame, 
                                                 filepath=os.path.join(output_path, name_prefix + 'eval_frame.csv'))
 
     novelty_analysis.plot_noc_curve(results_frame, novelty_class, filepath=os.path.join(output_path, name_prefix + 'noc_curve.png'))
     novelty_analysis.plot_accuracy_curve(results_frame, novelty_class, filepath=os.path.join(output_path, name_prefix + 'acc_curve.png'))
 
-    return evaluation_frame
+    return cm_frame, evaluation_frame
 
-def folds_eval(eval_frames, output_path, name_prefix=''):
-        eval_frames_avg = sum(eval_frames)/len(eval_frames)
-        eval_frames_avg.to_csv(os.path.join(output_path, name_prefix + 'eval_frames_avg.csv'))
-        metrics = np.array([frame.values for frame in eval_frames])
-        variances = np.array([np.var(metrics[:,i,:], axis=0) for i in range(metrics.shape[1])])
-        eval_frames_var = pd.DataFrame(data=variances, index=eval_frames_avg.index, columns=eval_frames_avg.columns)
-        eval_frames_var.to_csv(os.path.join(output_path, name_prefix + 'eval_frames_var.csv'))
+def frame_avg_var(frames_list, output_path, name_prefix=''):
+    frames_avg = sum(frames_list)/len(frames_list)
+    frames_avg.to_csv(os.path.join(output_path, name_prefix + 'frames_avg.csv'))
+    values = np.array([frame.values for frame in frames_list])
+    variances = np.array([np.var(values[:,i,:], axis=0) for i in range(values.shape[1])])
+    frames_var = pd.DataFrame(data=variances, index=frames_avg.index, columns=frames_avg.columns)
+    frames_var.to_csv(os.path.join(output_path, name_prefix + 'frames_var.csv'))
+
+    return frames_avg, frames_var
+
+def folds_eval(cm_frames, eval_frames, output_path, name_prefix=''):
+
+        cm_frames_avg, cm_frames_var = frame_avg_var(cm_frames, output_path, name_prefix + 'cm_')
+        eval_frames_avg, eval_frames_var = frame_avg_var(eval_frames, output_path, name_prefix + 'eval_')
 
         noc_areas = np.array([math_utils.trapezoid_integration(frame.loc['Nov rate'].values.flatten(), frame.loc['Trigger rate'].values.flatten())
                                 for frame in eval_frames])
@@ -60,10 +74,16 @@ def folds_eval(eval_frames, output_path, name_prefix=''):
             noc_area_dict = dict(folds=noc_areas, avg=noc_area_avg, var=noc_area_var)
             json.dump(da_utils.cast_to_python(noc_area_dict), json_file, indent=4)
 
-        return eval_frames_avg, eval_frames_var, noc_area_dict
+        return cm_frames_avg, cm_frames_var, eval_frames_avg, eval_frames_var, noc_area_dict
 
 def plot_data(novelty_class, folds, colors, threshold,
-                eval_frames, eval_frame_avg, eval_frame_var, noc_area_dict, output_path, name_prefix=''):
+                cm_frames_avg, cm_frames_var,
+                eval_frames, eval_frame_avg, eval_frame_var, noc_area_dict, 
+                output_path, name_prefix=''):
+
+        # Confusion matrix plot
+        metrics.plot_confusion_matrix(cm_frames_avg, cmerr=np.sqrt(cm_frames_var), 
+                                filepath=os.path.join(output_path, name_prefix + 'cm_frames_avg_plot.png'))
 
         #Average Noc curve
         plt.figure(figsize=(12,3))
@@ -129,7 +149,11 @@ def plot_data(novelty_class, folds, colors, threshold,
 def evaluate_kfolds_committee(current_dir, folds, novelty_class, colors):
 
     exp_eval_frames = list()
+    exp_cm_frames = list()
+
     wrapper_eval_frames = list()
+    wrapper_cm_frames = list()
+
     fold_count = 1
 
     for fold in folds: #Here we work on each fold speratedly, inside each fold folder
@@ -142,19 +166,39 @@ def evaluate_kfolds_committee(current_dir, folds, novelty_class, colors):
         print(f'Fold {fold_count}')
         exp_results_frame = pd.read_csv(os.path.join(current_dir, 'committee_results_frame.csv'), header=[0,1])
         exp_results_frame.to_csv(os.path.join(current_dir, 'exp_results_frame.csv'))
+
+        exp_classf_pred = np.array(exp_results_frame.iloc[:, 3].values, dtype=str)
+        exp_classf_true = np.array(exp_results_frame.loc[:, ('Labels', 'L')].values, dtype=str)
+        exp_classf_pred = exp_classf_pred[exp_classf_true != 'Nov']
+        exp_classf_true = exp_classf_true[exp_classf_true != 'Nov']
+        exp_cm_frame = metrics.confusion_matrix_frame(exp_classf_true, exp_classf_pred, filepath = os.path.join(current_dir,'exp_cm_frame.csv'))
+        metrics.plot_confusion_matrix(exp_cm_frame, os.path.join(current_dir, 'exp_cm_plot.png'))
+
         exp_eval_frame = novelty_analysis.evaluate_nov_detection(exp_results_frame, 
                                                                     filepath=os.path.join(current_dir, 'exp_eval_frame.csv'))
         novelty_analysis.plot_noc_curve(exp_results_frame, novelty_class, filepath=os.path.join(current_dir, 'exp_noc_curve.png'))
         novelty_analysis.plot_accuracy_curve(exp_results_frame, novelty_class, filepath=os.path.join(current_dir, 'exp_acc_curve.png'))
+
         exp_eval_frames.append(exp_eval_frame)
+        exp_cm_frames.append(exp_cm_frame)
 
         wrapper_results_frame = pd.read_csv(os.path.join(current_dir, 'results_frame.csv'), header=[0,1])
         wrapper_results_frame.to_csv(os.path.join(current_dir, 'wrapper_results_frame.csv'))
+
+        wrapper_classf_pred = np.array(wrapper_results_frame.iloc[:, 3].values, dtype=str)
+        wrapper_classf_true = np.array(wrapper_results_frame.loc[:, ('Labels', 'L')].values, dtype=str)
+        wrapper_classf_pred = wrapper_classf_pred[wrapper_classf_true != 'Nov']
+        wrapper_classf_true = wrapper_classf_true[wrapper_classf_true != 'Nov']
+        wrapper_cm_frame = metrics.confusion_matrix_frame(wrapper_classf_true, wrapper_classf_pred, filepath = os.path.join(current_dir,'wrapper_cm_frame.csv'))
+        metrics.plot_confusion_matrix(wrapper_cm_frame, os.path.join(current_dir, 'wrapper_cm_plot.png'))
+
         wrapper_eval_frame = novelty_analysis.evaluate_nov_detection(wrapper_results_frame, 
                                                                     filepath=os.path.join(current_dir, 'wrapper_eval_frame.csv'))
         novelty_analysis.plot_noc_curve(wrapper_results_frame, novelty_class, filepath=os.path.join(current_dir, 'wrapper_noc_curve.png'))
         novelty_analysis.plot_accuracy_curve(wrapper_results_frame, novelty_class, filepath=os.path.join(current_dir, 'wrapper_acc_curve.png'))
+
         wrapper_eval_frames.append(wrapper_eval_frame)
+        wrapper_cm_frames.append(wrapper_cm_frame)
 
         fold_count += 1
         current_dir, _ = os.path.split(current_dir)
@@ -162,20 +206,27 @@ def evaluate_kfolds_committee(current_dir, folds, novelty_class, colors):
     print('Averaging all folds.')
 
     exp_threshold = np.array(exp_eval_frame.columns.values.flatten(), dtype=np.float64)
-    exp_eval_frames_avg, exp_eval_frames_var, exp_noc_area_dict = folds_eval(exp_eval_frames, current_dir, 'exp_')
+    exp_cm_frames_avg, exp_cm_frames_var, exp_eval_frames_avg, exp_eval_frames_var, exp_noc_area_dict = folds_eval(exp_cm_frames, 
+                                                                                                                    exp_eval_frames, 
+                                                                                                                    current_dir, 'exp_')
     plot_data(novelty_class, fold_count, colors, exp_threshold,
-                            exp_eval_frames, exp_eval_frames_avg, exp_eval_frames_var, exp_noc_area_dict,
-                            current_dir, 'exp_')
+                exp_cm_frames_avg, exp_cm_frames_var,
+                exp_eval_frames, exp_eval_frames_avg, exp_eval_frames_var, exp_noc_area_dict,
+                current_dir, 'exp_')
 
     wrapper_threshold = np.array(wrapper_eval_frame.columns.values.flatten(), dtype=np.float64)
-    wrapper_eval_frames_avg, wrapper_eval_frames_var, wrapper_noc_area_dict = folds_eval(wrapper_eval_frames, current_dir, 'wrapper_')
+    wrapper_cm_frames_avg, wrapper_cm_frames_var, wrapper_eval_frames_avg, wrapper_eval_frames_var, wrapper_noc_area_dict = folds_eval(wrapper_cm_frames, 
+                                                                                                                    wrapper_eval_frames, 
+                                                                                                                    current_dir, 'wrapper_')
     plot_data(novelty_class, fold_count, colors, wrapper_threshold,
-                            wrapper_eval_frames, wrapper_eval_frames_avg, wrapper_eval_frames_var, wrapper_noc_area_dict,
-                            current_dir, 'wrapper_')
+                wrapper_cm_frames_avg, wrapper_cm_frames_var,
+                wrapper_eval_frames, wrapper_eval_frames_avg, wrapper_eval_frames_var, wrapper_noc_area_dict,
+                current_dir, 'wrapper_')
 
 def evaluate_kfolds_standard(current_dir, folds, novelty_class, colors):
 
     eval_frames = list()
+    cm_frames = list()
     fold_count = 1
 
     for fold in folds: #Here we work on each fold speratedly, inside each fold folder
@@ -187,12 +238,22 @@ def evaluate_kfolds_standard(current_dir, folds, novelty_class, colors):
 
         print(f'Fold {fold_count}')
         results_frame = pd.read_csv(os.path.join(current_dir, 'results_frame.csv'), header=[0,1])
+
+        classf_pred = np.array(results_frame.iloc[:, 3].values, dtype=str)
+        classf_true = np.array(results_frame.loc[:, ('Labels', 'L')].values, dtype=str)
+        classf_pred = classf_pred[classf_true != 'Nov']
+        classf_true = classf_true[classf_true != 'Nov']
+        cm_frame = metrics.confusion_matrix_frame(classf_true, classf_pred, filepath = os.path.join(current_dir, 'cm_frame.csv'))
+        metrics.plot_confusion_matrix(cm_frame, os.path.join(current_dir,'cm_plot.png'))
+
         eval_frame = novelty_analysis.evaluate_nov_detection(results_frame, 
                                                                 filepath=os.path.join(current_dir, 'eval_frame.csv'))
 
         novelty_analysis.plot_noc_curve(results_frame, novelty_class, filepath=os.path.join(current_dir, 'noc_curve.png'))
         novelty_analysis.plot_accuracy_curve(results_frame, novelty_class, filepath=os.path.join(current_dir, 'acc_curve.png'))
+
         eval_frames.append(eval_frame)
+        cm_frames.append(cm_frame)
 
         fold_count += 1
         current_dir, _ = os.path.split(current_dir)
@@ -200,10 +261,11 @@ def evaluate_kfolds_standard(current_dir, folds, novelty_class, colors):
     print('Averaging all folds.')
 
     threshold = np.array(eval_frame.columns.values.flatten(), dtype=np.float64)
-    eval_frames_avg, eval_frames_var, noc_area_dict = folds_eval(eval_frames, current_dir)
+    cm_frames_avg, cm_frames_var, eval_frames_avg, eval_frames_var, noc_area_dict = folds_eval(cm_frames, eval_frames, current_dir)
     plot_data(novelty_class, fold_count, colors, threshold,
-                            eval_frames, eval_frames_avg, eval_frames_var, noc_area_dict,
-                            current_dir)
+                cm_frames_avg, cm_frames_var,
+                eval_frames, eval_frames_avg, eval_frames_var, noc_area_dict,
+                current_dir)
 
 
 class SendInitMessage:
