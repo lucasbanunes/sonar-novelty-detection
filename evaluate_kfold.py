@@ -20,15 +20,11 @@ LINES = '--------------------------------------------------------------------\n'
 lofar_params_folders = np.sort(os.listdir(OUTPUT_DIR))
 for lofar_params_folder in lofar_params_folders:
     current_dir = os.path.join(OUTPUT_DIR, lofar_params_folder)
-    #import pdb; pdb.set_trace()
     if not os.path.isdir(current_dir):
         continue
 
     fft_pts = lofar_params_folder.split('_')[2]
     decimation = lofar_params_folder.split('_')[-2]
-    
-    if fft_pts == '1024':
-        continue
 
     model_neurons_folders = np.sort(os.listdir(current_dir))
 
@@ -75,12 +71,15 @@ for lofar_params_folder in lofar_params_folders:
             current_dir, _ = os.path.split(current_dir)
         
         if __name__ == '__main__':
-            print(LINES + f'fft_pts: {fft_pts}\n decimation: {decimation}\nModel: {model_name}\nNeurons: {num_neurons}')
+            print(LINES + f'fft_pts: {fft_pts}\n decimation: {decimation}\nModel: {model_name}\nNeurons: {num_neurons}\n' + LINES)
             for p in processes:
                 p.start()
             
             for p in processes:
                 p.join()
+
+            for p in processes:
+                p.close()
             
             del processes
             gc.collect()

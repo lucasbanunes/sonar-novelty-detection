@@ -49,20 +49,14 @@ for fft in fft_pts:
     cell_text = list()
     for position in positions:
         cell_text.append(list(best_models.loc[fft, (position, 'Model')].values))
-        #import pdb; pdb.set_trace()
-        error_lines(axis, [0,1,2], best_models.loc[fft, (position, 'Avg')].values,
-                    best_models.loc[fft, (position, 'Std')].values, WIDTH, COLORS_PER_POSITION[position])
+        error_lines(axis, [0,1,2], best_models.loc[fft, (position, 'Average')].values,
+                    best_models.loc[fft, (position, 'Error')].values, WIDTH, COLORS_PER_POSITION[position])
     axis.set_ylabel('NOC AUC')
     axis.set_title(f'LOFAR com {fft} FFT pts')
     axis.set_xticks([])
-    #cell_text = np.array(cell_text)
     row_labels = ['preto', 'cinza', 'marrom']
-    import pdb; pdb.set_trace()
     axis.table(cellText=cell_text,
                       rowLabels=row_labels,
                       colLabels=decimations,
                       loc='bottom')
-    #plt.tight_layout()
     fig.savefig(os.path.join(OUTPUT_DIR, f'plot_best_selection_{fft}_fft_pts.png'), dpi=200, format='png', bbox_inches="tight")
-
-    #best_models.loc[fft, (position, 'Model')].index

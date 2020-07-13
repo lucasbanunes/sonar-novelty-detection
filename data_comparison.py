@@ -10,17 +10,16 @@ from setup import setup
 
 #Gets enviroment variables and appends needed custom packages
 LOFAR_FOLDER, OUTPUT_DIR, RAW_DATA = setup()
-OUTPUT_DIR = OUTPUT_DIR + '_test'
 
 from data_analysis.utils import utils
 
 parser = argparse.ArgumentParser(description='This script mounts a DataFrame with the  NOC AUC results with all the models in a given lofar parameters folder')
-parser.add_argument('--format', help='Format to save the data frame: csv or xlsx.\nDefaults to xlsx', default='csv', type=str, choices=['csv', 'xlsx'])
+parser.add_argument('--format', help='Format to read and save the data frame: csv or xlsx.\nDefaults to xlsx', default='csv', type=str, choices=['csv', 'xlsx'])
 
 FORMAT = parser.parse_args().format
 COLORS = ('#000000', '#008000', '#FF0000', '#FFFF00', '#0000FF', '#808080', '#FF00FF', '#FFA500', '#A52A2A', '#00FFFF')
 CLASSES_NAMES = ('A', 'B', 'C', 'D')
-METRICS = ('Média', 'Erro')
+METRICS = ('Average', 'Error')
 
 def round_value_error(value, error):
     error, decimals = utils.around(error)
@@ -128,9 +127,9 @@ for lofar_params_folder in lofar_params_folders:
     avg_values = list()
     error_values = list()
     for column in novelties_comparison_frame:
-        if column[-1] == 'Média':
+        if column[-1] == 'Average':
             avg_values.append(novelties_comparison_frame.loc[:,column].values)
-        elif column[-1] == 'Erro':
+        elif column[-1] == 'Error':
             error_values.append(novelties_comparison_frame.loc[:,column].values)
         else:
             raise ValueError
@@ -144,7 +143,7 @@ for lofar_params_folder in lofar_params_folders:
 
     data = np.stack((novelties_avg, novelties_error), axis=-1)
     data = np.apply_along_axis(round_as_array, 1, data)
-    columns = pd.MultiIndex.from_product([['Novidade'],['Média', 'Erro']])
+    columns = pd.MultiIndex.from_product([['Novelties'],['Average', 'Error']])
     novelties_avg_frame = pd.DataFrame(data, columns = columns, index = novelties_comparison_frame.index)
 
     comparison_frame = novelties_comparison_frame.join(novelties_avg_frame)
@@ -153,7 +152,7 @@ for lofar_params_folder in lofar_params_folders:
     elif FORMAT == 'xlsx':
         comparison_frame.to_excel(os.path.join(current_dir, 'comparison_frame.xlsx'))
     else:
-        raise ValueError(f'Uknown format type: {FORMAT}')
+        raise ValueError(f'Unknown format type: {FORMAT}')
 
     del comparison_frame, novelties_comparison_frame, novelties_avg_frame
     
