@@ -45,11 +45,11 @@ def eval_results(classes_names, threshold, novelty_class, nov_index,
 
 def folds_eval(eval_frames, output_path, name_prefix=''):
         eval_frames_avg = sum(eval_frames)/len(eval_frames)
-        eval_frames_avg.to_csv(os.path.join(output_path, name_prefix + 'eval_frames_avg.csv'), index=False)
+        eval_frames_avg.to_csv(os.path.join(output_path, name_prefix + 'eval_frames_avg.csv'))
         metrics = np.array([frame.values for frame in eval_frames])
         variances = np.array([np.var(metrics[:,i,:], axis=0) for i in range(metrics.shape[1])])
         eval_frames_var = pd.DataFrame(data=variances, index=eval_frames_avg.index, columns=eval_frames_avg.columns)
-        eval_frames_var.to_csv(os.path.join(output_path, name_prefix + 'eval_frames_var.csv'), index=False)
+        eval_frames_var.to_csv(os.path.join(output_path, name_prefix + 'eval_frames_var.csv'))
 
         noc_areas = np.array([math_utils.trapezoid_integration(frame.loc['Nov rate'].values.flatten(), frame.loc['Trigger rate'].values.flatten())
                                 for frame in eval_frames])
@@ -65,6 +65,7 @@ def folds_eval(eval_frames, output_path, name_prefix=''):
 def plot_data(novelty_class, folds, colors, threshold,
                 eval_frames, eval_frame_avg, eval_frame_var, noc_area_dict, output_path, name_prefix=''):
 
+        #Average Noc curve
         plt.figure(figsize=(12,3))
         plt.grid(color='k', alpha=0.5, linestyle='dashed', linewidth=0.5)
         plt.plot(eval_frame_avg.loc['Trigger rate'], eval_frame_avg.loc['Nov rate'], color='k')
@@ -84,6 +85,7 @@ def plot_data(novelty_class, folds, colors, threshold,
         plt.savefig(fname=os.path.join(output_path, name_prefix + 'average_noc_curve.png'), dpi=200, format='png')
         plt.close()
 
+        #All folds noc curve
         plt.figure(figsize=(12,3))
         plt.grid(color='k', alpha=0.5, linestyle='dashed', linewidth=0.5)
         plt.title(f'Novelty class {novelty_class}')
@@ -100,20 +102,29 @@ def plot_data(novelty_class, folds, colors, threshold,
         plt.savefig(fname=os.path.join(output_path, name_prefix + 'noc_curve_all_folds.png'), dpi=200, format='png')
         plt.close()
 
-        #Acc curves
-        plt.figure(figsize=(12,3))
+        #Average acc curves
+        fig = plt.figure(figsize=(12,3))
         plt.grid(color='k', alpha=0.5, linestyle='dashed', linewidth=0.5)
         plt.ylim(0,1)
         plt.xlim(-1,1)
-        plt.errorbar(threshold, eval_frame_avg.loc['Nov acc'], yerr=np.sqrt(eval_frame_var.loc['Nov acc']), label='Nov acc', errorevery=20)
-        plt.errorbar(threshold, eval_frame_avg.loc['Classf acc'], yerr=np.sqrt(eval_frame_var.loc['Classf acc']), label='Classf acc', errorevery=20)
+        errorbar = plt.errorbar(threshold, eval_frame_avg.loc['Nov acc'], yerr=np.sqrt(eval_frame_var.loc['Nov acc']), label='Nov acc', errorevery=20)
+        nov_acc_color = errorbar.lines[0].get_color()
+        errorbar = plt.errorbar(threshold, eval_frame_avg.loc['Classf acc'], yerr=np.sqrt(eval_frame_var.loc['Classf acc']), label='Classf acc', errorevery=20)
+        classf_acc_color = errorbar.lines[0].get_color()
         plt.title(f'Novelty class {novelty_class}')
         plt.ylabel('Average Accuracy')
         plt.xlabel('Threshold')
-        plt.legend(loc=3)
-        plt.tight_layout()
-        plt.savefig(fname=os.path.join(output_path, name_prefix + 'average_acc_curve.png'), dpi=200, format='png')
-        plt.close()
+        plt.legend(loc=4)
+
+        zoomed_axis = fig.add_axes([0.1,0.3,0.3,0.3])
+        zoomed_axis.errorbar(threshold, eval_frame_avg.loc['Nov acc'], yerr=np.sqrt(eval_frame_var.loc['Nov acc']), label='Nov acc', errorevery=20, color=nov_acc_color)
+        zoomed_axis.errorbar(threshold, eval_frame_avg.loc['Classf acc'], yerr=np.sqrt(eval_frame_var.loc['Classf acc']), label='Classf acc', errorevery=20, color=classf_acc_color)
+        zoomed_axis.set_ylim(0.5,1.0)
+        zoomed_axis.set_xlim(0.5,1)
+        zoomed_axis.set_yticks([0.5, 0.625, 0.75, 0.875, 1.0])
+
+        fig.savefig(fname=os.path.join(output_path, name_prefix + 'average_acc_curve.png'), dpi=200, format='png')
+        plt.close(fig)
 
 def evaluate_kfolds_committee(current_dir, folds, novelty_class, colors):
 
@@ -130,7 +141,7 @@ def evaluate_kfolds_committee(current_dir, folds, novelty_class, colors):
         
         print(f'Fold {fold_count}')
         exp_results_frame = pd.read_csv(os.path.join(current_dir, 'committee_results_frame.csv'), header=[0,1])
-        exp_results_frame.to_csv(os.path.join(current_dir, 'exp_results_frame'), index=False)
+        exp_results_frame.to_csv(os.path.join(current_dir, 'exp_results_frame.csv'))
         exp_eval_frame = novelty_analysis.evaluate_nov_detection(exp_results_frame, 
                                                                     filepath=os.path.join(current_dir, 'exp_eval_frame.csv'))
         novelty_analysis.plot_noc_curve(exp_results_frame, novelty_class, filepath=os.path.join(current_dir, 'exp_noc_curve.png'))
@@ -138,7 +149,7 @@ def evaluate_kfolds_committee(current_dir, folds, novelty_class, colors):
         exp_eval_frames.append(exp_eval_frame)
 
         wrapper_results_frame = pd.read_csv(os.path.join(current_dir, 'results_frame.csv'), header=[0,1])
-        wrapper_results_frame.to_csv(os.path.join(current_dir, 'wrapper_results_frame'), index=False)
+        wrapper_results_frame.to_csv(os.path.join(current_dir, 'wrapper_results_frame.csv'))
         wrapper_eval_frame = novelty_analysis.evaluate_nov_detection(wrapper_results_frame, 
                                                                     filepath=os.path.join(current_dir, 'wrapper_eval_frame.csv'))
         novelty_analysis.plot_noc_curve(wrapper_results_frame, novelty_class, filepath=os.path.join(current_dir, 'wrapper_noc_curve.png'))
@@ -150,18 +161,17 @@ def evaluate_kfolds_committee(current_dir, folds, novelty_class, colors):
 
     print('Averaging all folds.')
 
-    exp_threshold = exp_eval_frame.columns.values.flatten()
-    exp_eval_frames_avg, exp_eval_frames_var, exp_noc_area_dict = folds_eval(exp_eval_frames, current_dir)
+    exp_threshold = np.array(exp_eval_frame.columns.values.flatten(), dtype=np.float64)
+    exp_eval_frames_avg, exp_eval_frames_var, exp_noc_area_dict = folds_eval(exp_eval_frames, current_dir, 'exp_')
     plot_data(novelty_class, fold_count, colors, exp_threshold,
                             exp_eval_frames, exp_eval_frames_avg, exp_eval_frames_var, exp_noc_area_dict,
-                            current_dir)
+                            current_dir, 'exp_')
 
-    wrapper_threshold = wrapper_eval_frame.columns.values.flatten()
-    wrapper_eval_frames_avg, wrapper_eval_frames_var, wrapper_noc_area_dict = folds_eval(wrapper_eval_frames, current_dir)
+    wrapper_threshold = np.array(wrapper_eval_frame.columns.values.flatten(), dtype=np.float64)
+    wrapper_eval_frames_avg, wrapper_eval_frames_var, wrapper_noc_area_dict = folds_eval(wrapper_eval_frames, current_dir, 'wrapper_')
     plot_data(novelty_class, fold_count, colors, wrapper_threshold,
                             wrapper_eval_frames, wrapper_eval_frames_avg, wrapper_eval_frames_var, wrapper_noc_area_dict,
-                            current_dir)
-
+                            current_dir, 'wrapper_')
 
 def evaluate_kfolds_standard(current_dir, folds, novelty_class, colors):
 
@@ -189,7 +199,7 @@ def evaluate_kfolds_standard(current_dir, folds, novelty_class, colors):
 
     print('Averaging all folds.')
 
-    threshold = eval_frame.columns.values.flatten()
+    threshold = np.array(eval_frame.columns.values.flatten(), dtype=np.float64)
     eval_frames_avg, eval_frames_var, noc_area_dict = folds_eval(eval_frames, current_dir)
     plot_data(novelty_class, fold_count, colors, threshold,
                             eval_frames, eval_frames_avg, eval_frames_var, noc_area_dict,
