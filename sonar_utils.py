@@ -82,7 +82,7 @@ def plot_data(novelty_class, folds, colors, threshold,
                 output_path, name_prefix=''):
 
         # Confusion matrix plot
-        metrics.plot_confusion_matrix(cm_frames_avg, cmerr=np.sqrt(cm_frames_var), 
+        metrics.plot_confusion_matrix(cm_frames_avg, cmerr=np.sqrt(cm_frames_var.values[:-1, :-1]), 
                                 filepath=os.path.join(output_path, name_prefix + 'cm_frames_avg_plot.png'))
 
         #Average Noc curve
@@ -267,6 +267,100 @@ def evaluate_kfolds_standard(current_dir, folds, novelty_class, colors):
                 eval_frames, eval_frames_avg, eval_frames_var, noc_area_dict,
                 current_dir)
 
+def training_plot(metric_name, model_name, novelty_class, n_folds, model_metrics, output_path):
+    
+    plt.figure(figsize=(12,3))
+    plt.grid(color='k', alpha=0.5, linestyle='dashed', linewidth=0.5)
+    higher_epoch = 0
+
+    for fold, val_metric, train_metric in zip(range(1, n_folds), model_metrics['val_'+metric_name], model_metrics[metric_name]):
+        current_epochs = len(val_metric)
+        higher_epoch = current_epochs if current_epochs > higher_epoch else higher_epoch
+        plt.plot(np.arange(1, current_epochs+1), val_metric, label=f'fold {fold} val')
+        plt.plot(np.arange(1, current_epochs+1), train_metric, label=f'fold {fold} train')
+
+    plt.title(f'{model_name.capitalize()} novelty class {novelty_class} {metric_name} progression')
+    plt.xlim(1, higher_epoch)
+    plt.legend(loc=4, fontsize='x-small')
+    plt.xlabel('Epochs')
+    plt.ylabel(metric_name.capitalize())
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_path, f'{model_name}_{metric_name}__progression.png'), format='png', dpi=200)
+    plt.close()
+
+def plot_standard_training(current_dir, folds, model_name, novelty_class):
+    
+    create_dict = True
+    fold_count = 1 
+
+    for fold in folds: #Here we work on each fold speratedly, inside each fold folder
+        current_dir = os.path.join(current_dir, fold)
+
+        #Obatining data from each fold
+        if not os.path.isdir(current_dir):
+            current_dir, _ = os.path.split(current_dir)
+            continue
+
+        with open(os.path.join(current_dir, 'model_training_log.json'), 'r') as json_file:
+            training_log = json.load(json_file)
+        
+        if create_dict:
+            model_metrics = {metric: list() for metric in training_log['params']['metrics']}
+            create_dict = False                        
+        
+        for metric in training_log['params']['metrics']:
+                model_metrics[metric].append(training_log['history'][metric])
+        
+        del training_log
+
+        fold_count += 1
+        current_dir, _ = os.path.split(current_dir)
+    
+    training_plot('sparse_accuracy', model_name, novelty_class, fold_count, model_metrics, current_dir)
+    training_plot('loss', model_name, novelty_class, fold_count, model_metrics, current_dir)
+
+def plot_committee_training(current_dir, folds, model_name, novelty_class):
+
+    create_dict = True
+    fold_count = 1 
+
+    for fold in folds: #Here we work on each fold speratedly, inside each fold folder
+        current_dir = os.path.join(current_dir, fold)
+
+        #Obatining data from each fold
+        if not os.path.isdir(current_dir):
+            current_dir, _ = os.path.split(current_dir)
+            continue
+
+        with open(os.path.join(current_dir, 'model_training_log.json'), 'r') as json_file:
+            exp_log = json.load(json_file)
+        
+        if create_dict:
+            exp_metrics = {metric: list() for metric in exp_log['params']['metrics']}
+        
+        for metric in exp_log['params']['metrics']:
+                exp_metrics[metric].append(exp_log['history'][metric])
+
+        with open(os.path.join(current_dir, 'model_training_log.json'), 'r') as json_file:
+            wrapper_log = json.load(json_file)
+        
+        if create_dict:
+            wrapper_metrics = {metric: list() for metric in wrapper_log['params']['metrics']}
+            create_dict = False
+        
+        for metric in wrapper_log['params']['metrics']:
+                wrapper_metrics[metric].append(wrapper_log['history'][metric])
+        
+        del wrapper_log, exp_log
+
+        fold_count += 1
+        current_dir, _ = os.path.split(current_dir)
+    
+    training_plot('sparse_accuracy', 'wrapper_'+model_name, novelty_class, fold_count, wrapper_metrics, current_dir)
+    training_plot('loss', 'wrapper_'+model_name, novelty_class, fold_count, wrapper_metrics, current_dir)
+
+    training_plot('sparse_accuracy', 'exp_'+model_name, novelty_class, fold_count, exp_metrics, current_dir)
+    training_plot('loss', 'exp_'+model_name, novelty_class, fold_count, exp_metrics, current_dir)
 
 class SendInitMessage:
 
