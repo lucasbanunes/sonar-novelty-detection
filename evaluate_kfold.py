@@ -4,15 +4,12 @@ import os
 import gc
 import multiprocessing
 import numpy as np
-import pandas as pd
 from setup import setup
 
 #Gets enviroment variables and appends needed custom packages
 LOFAR_FOLDER, OUTPUT_DIR, RAW_DATA = setup()
-#OUTPUT_DIR = 'D:\\Workspace\\output\\old_sonar_08-05-20'
 
 import sonar_utils
-from data_analysis.model_evaluation import novelty_analysis
 
 COLORS = ('#000000', '#008000', '#FF0000', '#FFFF00', '#0000FF', '#808080', '#FF00FF', '#FFA500', '#A52A2A', '#00FFFF')
 LINES = '--------------------------------------------------------------------\n'
@@ -27,10 +24,6 @@ for lofar_params_folder in lofar_params_folders:
     decimation = lofar_params_folder.split('_')[-2]
 
     model_neurons_folders = np.sort(os.listdir(current_dir))
-
-    outer_index = list()
-    inner_index = list()
-    data = list()
 
     for model_neurons_folder in model_neurons_folders:
         current_dir = os.path.join(current_dir, model_neurons_folder)
@@ -66,7 +59,7 @@ for lofar_params_folder in lofar_params_folders:
             novelty_class = method_novelty_folder[-1]
             fold_count = 1
 
-            processes.append(multiprocessing.Process(target=function, args=(current_dir, folds, novelty_class, COLORS), daemon=True))
+            processes.append(multiprocessing.Process(target=function, args=(current_dir, model_name, folds, novelty_class, COLORS), daemon=True))
 
             current_dir, _ = os.path.split(current_dir)
         

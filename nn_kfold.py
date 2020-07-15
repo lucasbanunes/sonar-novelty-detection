@@ -52,7 +52,7 @@ builder = getattr(my_models, MODEL_NAME)()
 builder_class = type(builder)
 FOLDS = int(args.folds)
 NEURONS = int(args.neurons)
-TELEGRAM_BOT = args.telegram
+TELEGRAM_BOT = args.bot
 CHAT_ID = args.chat
 
 #HERE THE SCRIPT REALLY STARTS
@@ -94,15 +94,16 @@ try:
     data, labels, freq = joblib.load(os.path.join(LOFAR_FOLDER, f'lofar_data_file_fft_{FFT_PTS}_overlap_{OVERLAP}_decimation_{DECIMATION}_spectrum_left_400.npy'))
     runs_per_class = joblib.load(os.path.join(RAW_DATA, f'runs_info_{FFT_PTS}_fft_pts_{DECIMATION}_decimation.joblib'))
     runs_per_class = tuple(runs_per_class.values())
-    #import pdb; pdb.set_trace()
     data = keras.utils.normalize(data)
+
     if builder_class.is_cnn:
         windows, win_labels, win_ranges = lofar_operators.window_runs(runs_per_class, np.arange(len(CLASSES_NAMES)), WINDOW_SIZE, STRIDE)
         splitter = RangedDataSplitter(windows, win_labels, win_ranges)
     elif builder_class.is_mlp:
-        splitter = RangedDataSplitter(data, labels, runs_per_class)
+        splitter = RangedDataSplitter(data, labels, np.hstack(runs_per_class))
     else:
         raise RuntimeError(f'The builder base architecture could not been identified. {builder_class} was passed')
+
     splitter.set_novelty(CLASSES_DICT[NOVELTY_CLASS], FROM_FULL_TO_KNOWN)
     
 
@@ -111,11 +112,6 @@ try:
                                 f'kfold_novelty_class_{NOVELTY_CLASS}')
 
     fold_count = 1
-    if builder_class.is_expert_committee:
-        wrapper_eval_frames = list()
-        exp_eval_frames = list()
-    else:
-        eval_frames = list()
     
     PARAMS = '\n'.join([f'{key}: {value}' for key,value in args.__dict__.items()])
     if TELEGRAM_BOT:
@@ -123,6 +119,7 @@ try:
         bot.sendMessage(CHAT_ID, message)
 
     for x_test, y_test, x_val, y_val, x_train, y_train in splitter.kfold_split(n_splits=FOLDS, shuffle=True):
+
         fold_start = time.time()
 
         y_train = da_utils.to_sparse_tanh(y_train)
@@ -135,9 +132,7 @@ try:
         elif builder_class.is_mlp:
             train_set = da_utils.DataSequence(x_train, y_train)
             val_set = da_utils.DataSequence(x_val, y_val)
-            test_set = lofar_operators.LofarImgSequence(x_test, y_test)
-
-        #import pdb; pdb.set_trace()
+            test_set = lofar_operators.DataSequence(x_test, y_test)
 
         print('------------------------------ Control variables ------------------------------')
         print(f'current fold: {fold_count}')
@@ -153,7 +148,7 @@ try:
 
             if TELEGRAM_BOT:
                 bot.sendMessage(CHAT_ID, MESSAGE_ID + 'Fitting the expert_committee')
-            committee_builder = builder.get_committee(x_test.input_shape(), KNOWN_CLASSES_NAMES, NEURONS, output_dir)
+            committee_builder = builder.get_committee(train_set.input_shape(), KNOWN_CLASSES_NAMES, NEURONS, output_dir)
             committee_train_set = builder.change_to_expert_data(KNOWN_CLASSES_NAMES, KNOWN_CLASSES_DICT, train_set)
             committee_val_set = builder.change_to_expert_data(KNOWN_CLASSES_NAMES, KNOWN_CLASSES_DICT, val_set)
 
@@ -167,15 +162,15 @@ try:
             else:
                 committee, committee_log = builder.fit_committee(committee_builder, committee_train_set, committee_val_set)
 
-            sonar_utils.save_expert_log(committee_log, output_dir)
+            sonar_utils.save_expert_log(committee_log, os.path.join(output_dir, 'exp_training_log.json'))
 
             committee_predictions = committee.predict(test_set)
             
-            exp_eval_frame = sonar_utils.eval_results(CLASSES_NAMES, THRESHOLD, NOVELTY_CLASS, NOV_INDEX, 
-                                                        committee_predictions, y_test, output_dir, name_prefix='exp')
-            exp_eval_frames.append(exp_eval_frame)
+            novelty_analysis.get_results(predictions=committee_predictions, labels=y_test, threshold=THRESHOLD, 
+                                                            classes_names=CLASSES_NAMES, novelty_index=NOV_INDEX,
+                                                            filepath=os.path.join(output_dir, 'exp_results_frame.csv'))
 
-            del committee, committee_builder, committee_log, committee_train_set, committee_val_set
+            del committee_builder, committee_log, committee_train_set, committee_val_set
 
             if TELEGRAM_BOT:
                 bot.sendMessage(CHAT_ID, MESSAGE_ID + 'Fitting the wrapper')
@@ -190,13 +185,13 @@ try:
             else:
                 wrapper_log = builder.fit_wrapper(wrapper, train_wrapper, val_wrapper, os.path.join(output_dir, 'wrapper'))
 
-            sonar_utils.save_multi_init_log(wrapper_log, output_dir)
+            sonar_utils.save_multi_init_log(wrapper_log, os.path.join(output_dir, 'wrapper_training_log.json'))
 
             wrapper_predictions = wrapper.predict(x=committee_predictions)
-            wrapper_eval_frame = sonar_utils.eval_results(CLASSES_NAMES, THRESHOLD, NOVELTY_CLASS, NOV_INDEX,
-                                                            wrapper_predictions, y_test, output_dir, name_prefix='wrapper')
-            eval_frames.append(wrapper_eval_frame)
 
+            novelty_analysis.get_results(predictions=wrapper_predictions, labels=y_test, threshold=THRESHOLD, 
+                                            classes_names=CLASSES_NAMES, novelty_index=NOV_INDEX,
+                                            filepath=os.path.join(output_dir, 'wrapper_results_frame.csv'))
             del train_wrapper, val_wrapper, wrapper
 
         else:
@@ -208,12 +203,12 @@ try:
             else:
                 log = builder.compile_and_fit(model, train_set, val_set, output_dir)
 
-            sonar_utils.save_multi_init_log(log, output_dir)
+            sonar_utils.save_multi_init_log(log, os.path.join(output_dir, 'training_log.json'))
 
             predictions = model.predict(x=test_set)
-            eval_frame = sonar_utils.eval_results(CLASSES_NAMES, THRESHOLD, NOVELTY_CLASS, NOV_INDEX,
-                                                    predictions, y_test, output_dir)
-            eval_frames.append(eval_frame)
+            novelty_analysis.get_results(predictions=predictions, labels=y_test, threshold=THRESHOLD, 
+                                            classes_names=CLASSES_NAMES, novelty_index=NOV_INDEX,
+                                            filepath=os.path.join(output_dir, 'results_frame.csv'))
 
             del model, log, predictions
         
@@ -251,27 +246,6 @@ try:
         
         fold_count += 1
         output_dir, _ = os.path.split(output_dir)
-
-    if builder_class.is_expert_committee:
-        exp_eval_frames_avg, exp_eval_frames_var, exp_noc_area_dict = sonar_utils.folds_eval(exp_eval_frames, 
-                                                                                        output_dir, 
-                                                                                        name_prefix='exp')
-        sonar_utils.plot_data(NOVELTY_CLASS, FOLDS, COLORS, THRESHOLD,
-                                exp_eval_frames, exp_eval_frames_avg, exp_eval_frames_var, exp_noc_area_dict,
-                                output_dir, name_prefix='exp')
-
-        wrapper_eval_frames_avg, wrapper_eval_frames_var, wrapper_noc_dict = sonar_utils.folds_eval(wrapper_eval_frames, 
-                                                                                                    output_dir, 
-                                                                                                    name_prefix='wrapper')
-        sonar_utils.plot_data(NOVELTY_CLASS, FOLDS, COLORS, THRESHOLD,
-                                wrapper_eval_frames, wrapper_eval_frames_avg, wrapper_eval_frames_var, wrapper_noc_dict,
-                                output_dir, name_prefix='wrapper')
-
-    else:
-        eval_frames_avg, eval_frames_var, noc_area_dict = sonar_utils.folds_eval(eval_frames, output_dir)
-        sonar_utils.plot_data(NOVELTY_CLASS, FOLDS, COLORS, THRESHOLD,
-                                eval_frames, eval_frames_avg, eval_frames_var, noc_area_dict,
-                                output_dir)
 
     with open(os.path.join(output_dir, 'parsed_params.json'), 'w') as json_file:
         json.dump(args.__dict__, json_file, indent=4)
