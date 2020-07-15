@@ -16,7 +16,7 @@ class standard_model():
         model.compile(loss=keras.losses.mean_squared_error, 
                     optimizer = keras.optimizers.Adam( learning_rate=0.001),
                     metrics = [metrics.sparse_accuracy])
-        early_stop = callbacks.EarlyStopping(monitor = 'val_sparse_accuracy', min_delta=0.001, patience=21, restore_best_weights=True, mode='max')
+        early_stop = callbacks.EarlyStopping(monitor = 'val_sparse_accuracy', min_delta=0.001, patience=30, restore_best_weights=True, mode='max')
         lr = callbacks.ReduceLROnPlateau(monitor='val_sparse_accuracy', factor=0.1, patience=7, min_lr=0.000001, mode='max')
         cb = [early_stop, lr]
         if bot is None:
@@ -62,8 +62,8 @@ class expert_commitee():
         model.compile(loss=keras.losses.mean_squared_error, 
             optimizer = keras.optimizers.Adam( learning_rate=0.01),
             metrics = [metrics.sparse_accuracy])
-        early_stop = keras.callbacks.EarlyStopping(monitor = 'val_sparse_accuracy', min_delta=0.001, patience=50, mode='max')
-        lr = callbacks.ReduceLROnPlateau(monitor='val_sparse_accuracy', factor=0.1, patience=20, min_lr = 0.000001, mode='max')
+        early_stop = keras.callbacks.EarlyStopping(monitor = 'val_sparse_accuracy', min_delta=0.001, patience=30, mode='max')
+        lr = callbacks.ReduceLROnPlateau(monitor='val_sparse_accuracy', factor=0.1, patience=7, min_lr = 0.000001, mode='max')
         if bot is None:
             log = model.multi_init_fit(x=train_set, epochs=1000, n_inits=10, init_metric='val_sparse_accuracy', validation_data=val_set, save_inits=True,
                         cache_dir=cache, callbacks=[early_stop, lr])
@@ -86,8 +86,8 @@ class expert_commitee():
         class_weights = {class_: None for class_ in classes}
         init_metrics = {class_: 'val_expert_accuracy' for class_ in classes}
         modes = {class_: 'max' for class_ in classes}
-        early_stop = keras.callbacks.EarlyStopping(monitor = 'val_expert_accuracy', min_delta=0.001, patience=50, mode='max')
-        lr = callbacks.ReduceLROnPlateau(monitor='val_expert_accuracy', factor=0.1, patience=20, min_lr = 0.000001, mode='max')
+        early_stop = keras.callbacks.EarlyStopping(monitor = 'val_expert_accuracy', min_delta=0.001, patience=30, mode='max')
+        lr = callbacks.ReduceLROnPlateau(monitor='val_expert_accuracy', factor=0.1, patience=7, min_lr = 0.000001, mode='max')
         if bot is None:
             model, log = committee.fit(x=train_set, epochs=1000, validation_data=val_set, class_weight=class_weights, init_metric=init_metrics, 
                             mode=modes, n_inits=10, save_inits=True, callbacks=[early_stop, lr])
@@ -113,11 +113,6 @@ class cnn(standard_model):
         model.add(Dense(3, activation='tanh'))
         return model
 
-    @staticmethod
-    def get_compiler(window_size, stride, **kwargs):
-        return dict(window_size=window_size, stride=stride, test_batch=16, train_batch=32, val_batch=32, 
-                    val_percentage=0.1, convolutional_input=True)
-
 class cnn_expert(expert_commitee):
 
     is_cnn = True
@@ -137,10 +132,25 @@ class cnn_expert(expert_commitee):
             experts.append(model)
         return np.array(experts)
 
+class cnn_mlp_expert(expert_commitee):
+
+    is_cnn = True
+    is_mlp = False
+
     @staticmethod
-    def get_compiler(window_size, stride, **kwargs):
-        return dict(window_size=window_size, stride=stride, test_batch=16, train_batch=32, val_batch=32, 
-                    val_percentage=0.1, convolutional_input=True)
+    def get_experts(input_shape, conv_neurons, classes):
+        experts=list()
+        for class_name in classes:
+            expert_name = f'{class_name}_expert'
+            input_layer = keras.Input(shape=input_shape, name=expert_name + '_input')
+            x = Conv2D(conv_neurons, kernel_size=4, activation = 'tanh')(input_layer)
+            x = MaxPool2D()(x)
+            x = Flatten()(x)
+            x = Dense(10, activation='tanh')(x)
+            output_layer = Dense(1, activation='tanh')(x) 
+            model = keras.Model(input_layer, output_layer, name=expert_name)
+            experts.append(model)
+        return np.array(experts)
 
 
 class mlp(standard_model):
@@ -154,10 +164,6 @@ class mlp(standard_model):
         model.add(Dense(intermediate_neurons, activation='tanh', input_shape=input_shape))
         model.add(Dense(3, activation='tanh'))
         return model
-
-    @staticmethod
-    def get_compiler(**kwargs):
-        return dict(test_batch=16, train_batch=32, val_batch=32, val_percentage=0.1, convolutional_input=False)
 
 class mlp_expert(expert_commitee):
 
@@ -175,7 +181,3 @@ class mlp_expert(expert_commitee):
             model = keras.Model(input_layer, output_layer, name=expert_name)
             experts.append(model)
         return np.array(experts)
-
-    @staticmethod
-    def get_compiler(**kwargs):
-        return dict(test_batch=16, train_batch=32, val_batch=32, val_percentage=0.1, convolutional_input=False)
