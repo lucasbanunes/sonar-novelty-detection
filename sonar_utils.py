@@ -164,7 +164,7 @@ def evaluate_kfolds_committee(current_dir, model_name, folds, novelty_class, col
         
         print(f'Fold {fold_count} novelty {novelty_class}')
 
-        with open(os.path.join(current_dir, 'committee_training_log.json'), 'r') as json_file:
+        with open(os.path.join(current_dir, 'exp_training_log.json'), 'r') as json_file:
             exp_log = json.load(json_file)
         
         if create_dict:
@@ -174,7 +174,7 @@ def evaluate_kfolds_committee(current_dir, model_name, folds, novelty_class, col
             for metric in log['params'] ['metrics']:
                 exp_metrics[class_][metric].append(log['history'][metric])
 
-        with open(os.path.join(current_dir, 'model_training_log.json'), 'r') as json_file:
+        with open(os.path.join(current_dir, 'wrapper_training_log.json'), 'r') as json_file:
             wrapper_log = json.load(json_file)
         
         if create_dict:
@@ -203,7 +203,7 @@ def evaluate_kfolds_committee(current_dir, model_name, folds, novelty_class, col
     training_plot('sparse_accuracy', 'wrapper_'+model_name, novelty_class, fold_count, wrapper_metrics, current_dir)
     training_plot('loss', 'wrapper_'+model_name, novelty_class, fold_count, wrapper_metrics, current_dir)
 
-    for class_, metrics_log in exp_metrics:
+    for class_, metrics_log in exp_metrics.items():
         training_plot('expert_accuracy', f'{class_}_exp_'+model_name, novelty_class, fold_count, metrics_log, current_dir)
         training_plot('loss', f'{class_}_exp_'+model_name, novelty_class, fold_count, metrics_log , current_dir)
 

@@ -77,6 +77,8 @@ KNOWN_CLASSES_DICT = {known_class: value
             for known_class, value in zip(KNOWN_CLASSES_NAMES, KNOWN_CLASSES_VALUES)}
             #Dict with the key as known names and value as known values
 
+EXPERT_MAPPING = {known_class: value 
+            for known_class, value in zip(KNOWN_CLASSES_NAMES, da_utils.to_sparse_tanh(KNOWN_CLASSES_VALUES))}
 #Constants functions
 VALUE_MAPPING = lambda x: CLASSES_NAMES[CLASSES_VALUES == x][0]        #Maps the values back to the classes names
 FROM_FULL_TO_KNOWN = lambda x: KNOWN_CLASSES_DICT[VALUE_MAPPING(x)]       #Function that connects full values to known values
@@ -149,8 +151,8 @@ try:
             if TELEGRAM_BOT:
                 bot.sendMessage(CHAT_ID, MESSAGE_ID + 'Fitting the expert_committee')
             committee_builder = builder.get_committee(train_set.input_shape(), KNOWN_CLASSES_NAMES, NEURONS, output_dir)
-            committee_train_set = builder.change_to_expert_data(KNOWN_CLASSES_NAMES, KNOWN_CLASSES_DICT, train_set)
-            committee_val_set = builder.change_to_expert_data(KNOWN_CLASSES_NAMES, KNOWN_CLASSES_DICT, val_set)
+            committee_train_set = builder.change_to_expert_data(KNOWN_CLASSES_NAMES, EXPERT_MAPPING, train_set)
+            committee_val_set = builder.change_to_expert_data(KNOWN_CLASSES_NAMES, EXPERT_MAPPING, val_set)
 
             if TELEGRAM_BOT:
                 committee, committee_log = builder.fit_committee(committee_builder, committee_train_set, committee_val_set, bot, CHAT_ID)
