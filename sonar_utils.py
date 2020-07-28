@@ -1,11 +1,12 @@
 import os
+import shutil
 import json
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import data_analysis.utils.utils as da_utils
 from data_analysis.utils import math_utils, metrics
-from data_analysis.model_evaluation import novelty_analysis
+from data_analysis.model_evaluation import novelty_analysis, classification
 
 def save_multi_init_log(log, filepath):
     callback = log.pop('best_callback')
@@ -31,12 +32,19 @@ def get_results_message(multi_init_log):
 
 def eval_results(novelty_class, results_path, output_path, name_prefix=''):
     results_frame = pd.read_csv(results_path, header=[0,1])
+
+    if results_frame.shape[1] == 655:
+        results_frame = results_frame.iloc[:, 1:]
     
     labels = np.array(results_frame.loc[:, ('Labels', 'L')].values.flatten(), dtype=str)
-
     classf_pred = np.array(results_frame.iloc[:, 3].values, dtype=str)
+    classes = np.unique(classf_pred)
     classf_pred = classf_pred[labels != 'Nov']
     classf_true = labels[labels != 'Nov']
+    classf_output = results_frame.loc[:, 'Neurons'].values[labels != 'Nov']
+
+    nov_rep = novelty_analysis.novelty_report(results_frame, classes, filepath=os.path.join(output_path, name_prefix + 'nov_rep.csv'))
+    classf_rep = classification.wta_classf_analysis(classf_output, classf_true, filepath=os.path.join(output_path, name_prefix + 'classf_rep.csv'))
     cm_frame = metrics.confusion_matrix_frame(classf_true, classf_pred, filepath = os.path.join(output_path, name_prefix + 'cm_frame.csv'), normalize='true')
     metrics.plot_confusion_matrix(cm_frame, os.path.join(output_path, name_prefix + 'cm_plot.png'))
 
@@ -46,7 +54,7 @@ def eval_results(novelty_class, results_path, output_path, name_prefix=''):
     novelty_analysis.plot_noc_curve(results_frame, novelty_class, filepath=os.path.join(output_path, name_prefix + 'noc_curve.png'))
     novelty_analysis.plot_accuracy_curve(results_frame, novelty_class, filepath=os.path.join(output_path, name_prefix + 'acc_curve.png'))
 
-    return cm_frame, evaluation_frame
+    return nov_rep, classf_rep, cm_frame, evaluation_frame
 
 def frame_avg_var(frames_list, output_path, name_prefix=''):
     frames_avg = sum(frames_list)/len(frames_list)
@@ -58,7 +66,35 @@ def frame_avg_var(frames_list, output_path, name_prefix=''):
 
     return frames_avg, frames_var
 
-def folds_eval(cm_frames, eval_frames, output_path, name_prefix=''):
+def nov_report_avg(nov_reps, output_path, name_prefix=''):
+    
+    avg_frame = sum(nov_reps)/len(nov_reps)
+    values = np.array([frame.values for frame in nov_reps])
+    variances = np.array([np.var(values[:,i,:], axis=0) for i in range(values.shape[1])])
+    err_frame = pd.DataFrame(data=np.sqrt(variances), index=avg_frame.index, columns=avg_frame.columns)
+
+    avg_frame.insert(loc=1, column='occurences_err', value=err_frame.loc[:, 'class_occurences'].values.flatten())
+    avg_frame.insert(loc=6, column='min_value_err', value=err_frame.loc[:, 'min_value'].values.flatten())
+    avg_frame.insert(loc=avg_frame.shape[1], column='max_value_err', value=err_frame.loc[:, 'max_value'].values.flatten())
+
+    errors = np.array([nov_rep.loc[:, 'err'].values for nov_rep in nov_reps])
+    avg_frame.loc[:, 'err'] = np.sqrt(np.sum(errors ** 2, axis=0))/len(errors)
+    errors = np.array([nov_rep.loc[:, 'min_err'].values for nov_rep in nov_reps])
+    avg_frame.loc[:, 'min_err'] = np.sqrt(np.sum(errors ** 2, axis=0))/len(errors)
+    errors = np.array([nov_rep.loc[:, 'max_err'].values for nov_rep in nov_reps])
+    avg_frame.loc[:, 'max_err'] = np.sqrt(np.sum(errors ** 2, axis=0))/len(errors)
+
+    avg_frame.to_csv(os.path.join(output_path, name_prefix + 'nov_report_avg.csv'))
+
+def folds_eval(nov_reps, classf_reps, cm_frames, eval_frames, output_path, name_prefix=''):
+
+        new_classf_reps = list()
+        for classf_rep in classf_reps:
+            new_classf_reps.append(classf_rep.drop(['Most Misclassf', 'Most events'], axis=1))    
+        frame_avg_var(new_classf_reps, output_path, name_prefix + 'classf_rep_')
+        del new_classf_reps
+
+        nov_report_avg(nov_reps, output_path, name_prefix)
 
         cm_frames_avg, cm_frames_var = frame_avg_var(cm_frames, output_path, name_prefix + 'cm_')
         eval_frames_avg, eval_frames_var = frame_avg_var(eval_frames, output_path, name_prefix + 'eval_')
@@ -148,11 +184,16 @@ def evaluate_kfolds_committee(current_dir, model_name, folds, novelty_class, col
 
     exp_eval_frames = list()
     exp_cm_frames = list()
+    exp_classf_reps = list()
+    exp_nov_reps = list()
 
     wrapper_eval_frames = list()
     wrapper_cm_frames = list()
-    create_dict = True    
+    wrapper_classf_reps = list()
+    wrapper_nov_reps = list()
 
+    create_dict = True   
+    training_log = True
     fold_count = 1
 
     for fold in folds: #Here we work on each fold speratedly, inside each fold folder
@@ -163,19 +204,31 @@ def evaluate_kfolds_committee(current_dir, model_name, folds, novelty_class, col
             continue
         
         print(f'Fold {fold_count} novelty {novelty_class}')
+    
 
-        with open(os.path.join(current_dir, 'exp_training_log.json'), 'r') as json_file:
-            exp_log = json.load(json_file)
-        
-        if create_dict:
-            exp_metrics = {class_ : {metric: list() for metric in log['params']['metrics']} for class_, log in exp_log.items()}
-        
-        for class_, log in exp_log.items():
-            for metric in log['params'] ['metrics']:
-                exp_metrics[class_][metric].append(log['history'][metric])
+        if  not os.path.exists(os.path.join(current_dir, 'exp_training_log.json')):
+            print(f'Copying exp training log at novelty {novelty_class}')
+            shutil.copy(os.path.join(current_dir, 'committee_training_log.json'),
+                    os.path.join(current_dir, 'exp_training_log.json'))
+            training_log = False 
+        else:
+            with open(os.path.join(current_dir, 'exp_training_log.json'), 'r') as json_file:
+                exp_log = json.load(json_file)
+            
+            if create_dict:
+                exp_metrics = {class_ : {metric: list() for metric in log['params']['metrics']} for class_, log in exp_log.items()}
+            
+            for class_, log in exp_log.items():
+                for metric in log['params'] ['metrics']:
+                        exp_metrics[class_][metric].append(log['history'][metric])
+
+        if not os.path.exists(os.path.join(current_dir, 'wrapper_training_log.json')):
+            print(f'Copying wrapper training log at novelty {novelty_class}')
+            shutil.copy(os.path.join(current_dir, 'model_training_log.json'),
+                        os.path.join(current_dir, 'wrapper_training_log.json'))
 
         with open(os.path.join(current_dir, 'wrapper_training_log.json'), 'r') as json_file:
-            wrapper_log = json.load(json_file)
+                wrapper_log = json.load(json_file)
         
         if create_dict:
             wrapper_metrics = {metric: list() for metric in wrapper_log['params']['metrics']}
@@ -184,16 +237,19 @@ def evaluate_kfolds_committee(current_dir, model_name, folds, novelty_class, col
         for metric in wrapper_log['params']['metrics']:
                 wrapper_metrics[metric].append(wrapper_log['history'][metric])
         
-        del wrapper_log, exp_log
+        del wrapper_log
 
-        exp_cm_frame, exp_eval_frame = eval_results(novelty_class, os.path.join(current_dir, 'exp_results_frame.csv'), current_dir, 'exp_')
+        exp_nov_rep, exp_classf_rep, exp_cm_frame, exp_eval_frame = eval_results(novelty_class, os.path.join(current_dir, 'exp_results_frame.csv'), current_dir, 'exp_')
         exp_eval_frames.append(exp_eval_frame)
         exp_cm_frames.append(exp_cm_frame)
+        exp_classf_reps.append(exp_classf_rep)
+        exp_nov_reps.append(exp_nov_rep)
 
-        wrapper_cm_frame, wrapper_eval_frame = eval_results(novelty_class, os.path.join(current_dir, 'wrapper_results_frame.csv'), current_dir, 'wrapper_')
+        wrapper_nov_rep, wrapper_classf_rep, wrapper_cm_frame, wrapper_eval_frame = eval_results(novelty_class, os.path.join(current_dir, 'wrapper_results_frame.csv'), current_dir, 'wrapper_')
         wrapper_eval_frames.append(wrapper_eval_frame)
         wrapper_cm_frames.append(wrapper_cm_frame)
-
+        wrapper_classf_reps.append(wrapper_classf_rep)
+        wrapper_nov_reps.append(wrapper_nov_rep)
 
         fold_count += 1
         current_dir, _ = os.path.split(current_dir)
@@ -203,12 +259,14 @@ def evaluate_kfolds_committee(current_dir, model_name, folds, novelty_class, col
     training_plot('sparse_accuracy', 'wrapper_'+model_name, novelty_class, fold_count, wrapper_metrics, current_dir)
     training_plot('loss', 'wrapper_'+model_name, novelty_class, fold_count, wrapper_metrics, current_dir)
 
-    for class_, metrics_log in exp_metrics.items():
-        training_plot('expert_accuracy', f'{class_}_exp_'+model_name, novelty_class, fold_count, metrics_log, current_dir)
-        training_plot('loss', f'{class_}_exp_'+model_name, novelty_class, fold_count, metrics_log , current_dir)
+    if training_log:
+        for class_, metrics_log in exp_metrics.items():
+            training_plot('expert_accuracy', f'{class_}_exp_'+model_name, novelty_class, fold_count, metrics_log, current_dir)
+            training_plot('loss', f'{class_}_exp_'+model_name, novelty_class, fold_count, metrics_log , current_dir)
 
     exp_threshold = np.array(exp_eval_frame.columns.values.flatten(), dtype=np.float64)
-    exp_cm_frames_avg, exp_cm_frames_var, exp_eval_frames_avg, exp_eval_frames_var, exp_noc_area_dict = folds_eval(exp_cm_frames, 
+    exp_cm_frames_avg, exp_cm_frames_var, exp_eval_frames_avg, exp_eval_frames_var, exp_noc_area_dict = folds_eval(exp_nov_reps, exp_classf_reps, 
+                                                                                                                    exp_cm_frames, 
                                                                                                                     exp_eval_frames, 
                                                                                                                     current_dir, 'exp_')
     plot_data(novelty_class, fold_count, colors, exp_threshold,
@@ -217,7 +275,9 @@ def evaluate_kfolds_committee(current_dir, model_name, folds, novelty_class, col
                 current_dir, 'exp_')
 
     wrapper_threshold = np.array(wrapper_eval_frame.columns.values.flatten(), dtype=np.float64)
-    wrapper_cm_frames_avg, wrapper_cm_frames_var, wrapper_eval_frames_avg, wrapper_eval_frames_var, wrapper_noc_area_dict = folds_eval(wrapper_cm_frames, 
+    wrapper_cm_frames_avg, wrapper_cm_frames_var, wrapper_eval_frames_avg, wrapper_eval_frames_var, wrapper_noc_area_dict = folds_eval(wrapper_nov_reps,
+                                                                                                                    wrapper_classf_reps,
+                                                                                                                    wrapper_cm_frames, 
                                                                                                                     wrapper_eval_frames, 
                                                                                                                     current_dir, 'wrapper_')
     plot_data(novelty_class, fold_count, colors, wrapper_threshold,
@@ -229,6 +289,9 @@ def evaluate_kfolds_standard(current_dir, model_name, folds, novelty_class, colo
 
     eval_frames = list()
     cm_frames = list()
+    classf_reps = list()
+    nov_reps = list()
+
     create_dict = True
     fold_count = 1
 
@@ -241,9 +304,14 @@ def evaluate_kfolds_standard(current_dir, model_name, folds, novelty_class, colo
 
         print(f'Fold {fold_count} novelty {novelty_class}')
 
+        if os.path.exists(os.path.join(current_dir, 'model_training_log.json')):
+            print(f'Copying training log at {novelty_class}')
+            shutil.copy(os.path.join(current_dir, 'model_training_log.json'),
+                        os.path.join(current_dir, 'training_log.json'))
+
         with open(os.path.join(current_dir, 'training_log.json'), 'r') as json_file:
-            training_log = json.load(json_file)
-        
+                training_log = json.load(json_file)
+            
         if create_dict:
             model_metrics = {metric: list() for metric in training_log['params']['metrics']}
             create_dict = False                        
@@ -253,10 +321,11 @@ def evaluate_kfolds_standard(current_dir, model_name, folds, novelty_class, colo
         
         del training_log
 
-        cm_frame, eval_frame = eval_results(novelty_class, os.path.join(current_dir, 'results_frame.csv'), current_dir)
+        nov_rep, classf_rep, cm_frame, eval_frame = eval_results(novelty_class, os.path.join(current_dir, 'results_frame.csv'), current_dir)
         eval_frames.append(eval_frame)
         cm_frames.append(cm_frame)
-
+        classf_reps.append(classf_rep)
+        nov_reps.append(nov_rep)
 
         fold_count += 1
         current_dir, _ = os.path.split(current_dir)
@@ -267,7 +336,7 @@ def evaluate_kfolds_standard(current_dir, model_name, folds, novelty_class, colo
     training_plot('loss', model_name, novelty_class, fold_count, model_metrics, current_dir)
 
     threshold = np.array(eval_frame.columns.values.flatten(), dtype=np.float64)
-    cm_frames_avg, cm_frames_var, eval_frames_avg, eval_frames_var, noc_area_dict = folds_eval(cm_frames, eval_frames, current_dir)
+    cm_frames_avg, cm_frames_var, eval_frames_avg, eval_frames_var, noc_area_dict = folds_eval(nov_reps, classf_reps, cm_frames, eval_frames, current_dir)
     plot_data(novelty_class, fold_count, colors, threshold,
                 cm_frames_avg, cm_frames_var,
                 eval_frames, eval_frames_avg, eval_frames_var, noc_area_dict,
