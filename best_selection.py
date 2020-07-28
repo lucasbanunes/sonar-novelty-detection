@@ -50,7 +50,7 @@ for lofar_params_folder in lofar_params_folders:
         comparison_frame = pd.read_excel(os.path.join(current_dir, 'comparison_frame.xlsx'), header=[0,1], index_col=[0,1])
     else:
         raise ValueError(f'Unknown format type: {FORMAT}')
-    best_frame = comparison_frame.loc[:, NOVELTY].nlargest(3, 'Average')     #Gets the best 3 models
+    best_frame = comparison_frame.loc[:, NOVELTY].nlargest(5, 'Average')     #Gets the best 3 models
     best_avg = list()
     best_error = list()
     for avg, error in zip( best_frame.loc[:,'Average'].values,  best_frame.loc[:,'Error'].values):
@@ -74,13 +74,13 @@ for lofar_params_folder in lofar_params_folders:
     current_dir, _ = os.path.split(current_dir)
 
 index = pd.MultiIndex.from_arrays([fft_pts_index, decimation_index], names=('Pts', 'Decimation'))
-columns = pd.MultiIndex.from_product([('First', 'Second', 'Third'), ('Model', 'Average', 'Error')])
+columns = pd.MultiIndex.from_product([('First', 'Second', 'Third', 'Fourth', 'Fifth'), ('Model', 'Average', 'Error')])
 data = np.stack(tuple(best_data), axis=0)
 best_frame = pd.DataFrame(data, index=index, columns=columns)
-filename = f'best_models_{NOVELTY}.csv'
+filename = f'best_models_{NOVELTY}'
 if FORMAT == 'csv':
-    best_frame.to_csv(os.path.join(OUTPUT_DIR, filename))
+    best_frame.to_csv(os.path.join(OUTPUT_DIR, filename+'.csv'))
 elif FORMAT == 'xlsx':
-    best_frame.to_excel(os.path.join(OUTPUT_DIR, filename))
+    best_frame.to_excel(os.path.join(OUTPUT_DIR, filename+'.xlsx'))
 else:
     raise ValueError(f'Unknown format type: {FORMAT}')
