@@ -51,7 +51,8 @@ class SignalProcessor():
                 lofar_dataset['data'].append(lofargram)
                 lofar_dataset['labels'].append(np.full((len_lofargram,), class_label, np.int16))
                 range_start += len_lofargram
-                    
+            
+            class_label += 1
             current_dir, _  = os.path.split(current_dir)
 
         lofar_dataset['data'] = np.concatenate(lofar_dataset['data'], axis=0)
