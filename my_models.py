@@ -12,7 +12,6 @@ from data_analysis.utils.lofar_operators import LofarImgSequence
 NUMBER_OF_INITS = 10
 
 class standard_model():
-    is_expert_committee = False
 
     @staticmethod
     def compile_and_fit(model,train_set, val_set, bot=None, chat_id=None, message_id=None):
@@ -44,34 +43,6 @@ class expert_commitee():
     @staticmethod
     def get_experts(input_shape, intermediate_neurons, classes):
         raise NotImplementedError
-
-    @staticmethod
-    def get_wrapper_layers(intermediate_neurons):
-        layers = [Dense(intermediate_neurons, activation='tanh'), Dense(3, activation='tanh')]
-        return layers
-
-    @staticmethod
-    def get_wrapped_committee(committee, wrapper_layers):
-        input_layer = keras.Input(tuple(committee.input.shape[1:]))
-        wrapper_experts = list()
-        for expert in committee.layers:
-            if training.is_model(expert):
-                expert_as_layer = keras.Model(expert.input, expert.layers[-2].output, name=expert.name)(input_layer)
-                wrapper_experts.append(expert_as_layer)
-        x = keras.layers.concatenate(wrapper_experts)
-        for layer in wrapper_layers:
-            x = layer(x)
-        wrapped_committee = keras.Model(input_layer, x, name='wrapped_committee')
-        
-        for expert in wrapped_committee.layers:
-            if training.is_model(expert):
-                expert.trainable = False
-
-        return wrapped_committee
-
-    @staticmethod
-    def fit_wrapped_committee(model, train_set, val_set, bot=None, chat_id=None, message_id=None):
-        return standard_model.compile_and_fit(model,train_set, val_set, bot, chat_id, message_id)
 
     @staticmethod
     def fit_committee(experts, classes, class_mapping, train_set, val_set, bot=None, chat_id=None, message_id=None):
@@ -121,6 +92,38 @@ class expert_commitee():
 
         return committee, multi_inits
 
+class neural_committee(standard_model):
+
+    @staticmethod
+    def get_data(model_architecture, *args, **kwargs):
+        return model_architecture.get_data(*args, **kwargs)
+
+    @staticmethod
+    def get_wrapper_layers(intermediate_neurons):
+        layers = [Dense(intermediate_neurons, activation='tanh'), Dense(3, activation='tanh')]
+        return layers
+
+    @staticmethod
+    def get_model(multi_inits_path, wrapper_layers, input_shape):
+        input_layer = keras.Input(input_shape)
+        wrapper_experts = list()
+        for expert_log in np.sort(os.listdir(multi_inits_path)):
+            multi_init_log = training.MultiInitLog.from_json(os.path.join(multi_inits_path, expert_log))
+            expert = keras.models.model_from_json(multi_init_log.model_config)
+            best_weights = [np.array(x) for x in multi_init_log.best_weights('val_expert_accuracy', 'max', False)]
+            expert.set_weights(best_weights)
+            expert_as_layer = keras.Model(expert.input, expert.layers[-2].output, name=expert.name)(input_layer)
+            wrapper_experts.append(expert_as_layer)
+        x = keras.layers.concatenate(wrapper_experts)
+        for layer in wrapper_layers:
+            x = layer(x)
+        neural_committee = keras.Model(input_layer, x, name='neural_committee')
+        
+        for expert in neural_committee.layers:
+            if training.is_model(expert):
+                expert.trainable = False
+
+        return neural_committee
 
 class cnn(standard_model):
 
@@ -135,8 +138,10 @@ class cnn(standard_model):
         return model
     
     @staticmethod
-    def get_data(base_path, split, to_known_value, args):
-        splitpath = os.path.join(base_path, f'kfold_{args.folds}_folds', f'window_size_{args.window_size}_stride_{args.stride}', f'split_{split}.npz')
+    def get_data(base_path, split, to_known_value, parsed_args):
+        splitpath = os.path.join(base_path, f'kfold_{parsed_args.folds}_folds', 
+                        f'window_size_{parsed_args.window_size}_stride_{parsed_args.stride}', 
+                        f'split_{split}.npz')
         split_set = np.load(splitpath, allow_pickle=True)
 
         x_train, y_train = shuffle_pair(split_set['x_train'], split_set['y_train'])
@@ -159,8 +164,8 @@ class cnn(standard_model):
 class cnn_expert(expert_commitee):
 
     @staticmethod
-    def get_data(base_path, split, to_known_value, args):
-        return cnn.get_data(base_path, split, to_known_value, args)
+    def get_data(base_path, split, to_known_value, parsed_args):
+        return cnn.get_data(base_path, split, to_known_value, parsed_args)
     @staticmethod
     def get_experts(input_shape, conv_neurons, classes):
         experts = dict()
@@ -204,8 +209,8 @@ class mlp(standard_model):
         return model
 
     @staticmethod
-    def get_data(base_path, split, to_known_value, args):
-        splitpath = os.path.join(base_path, f'kfold_{args.folds}_folds', 'vectors', f'split_{split}.npz')
+    def get_data(base_path, split, to_known_value, parsed_args):
+        splitpath = os.path.join(base_path, f'kfold_{parsed_args.folds}_folds', 'vectors', f'split_{split}.npz')
         split_set = np.load(splitpath, allow_pickle=True)
 
         x_train, y_train = shuffle_pair(split_set['x_train'], split_set['y_train'])
@@ -224,8 +229,8 @@ class mlp(standard_model):
 class mlp_expert(expert_commitee):
 
     @staticmethod
-    def get_data(base_path, split, to_known_value, args):
-        return mlp.get_data(base_path, split, to_known_value, args)
+    def get_data(base_path, split, to_known_value, parsed_args):
+        return mlp.get_data(base_path, split, to_known_value, parsed_args)
 
     @staticmethod
     def get_experts(input_shape, intermediate_neurons, classes):

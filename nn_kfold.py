@@ -15,6 +15,7 @@ from utils.data_split import lofar_kfold_split
 WAV_FOLDER, LOFAR_FOLDER, OUTPUT_DIR = setup()
 
 import my_models
+from data_analysis.neural_networks.training import MultiInitLog
 from data_analysis.model_evaluation import novelty_analysis
 from data_analysis.utils.utils import to_sparse_tanh
 
@@ -25,18 +26,21 @@ parser.add_argument('neurons', help='number of neurons in the intermediate layer
 parser.add_argument('fft_pts', help='number of fft points used to generate the lofar data', type=int)
 parser.add_argument('overlap', help='number of overlap used to generate the lofar data', type=int)
 parser.add_argument('decimation', help='number of decimation used to generate the lofar data', type=int)
-parser.add_argument('bins', type=int)
+parser.add_argument('bins', help='number of bins retained from the lofargram', type=int)
 parser.add_argument('novelty', help='class to be treated as novelty')
 parser.add_argument('folds', help='number of folds', type=int)
-parser.add_argument('--wneurons', '-n', help='number of neurons in the intermediate wrapper layer', type=int)
+parser.add_argument('--expert', '-e', help='expert to be wrapped', default=None)
+parser.add_argument('--expert_neurons', '-en', help='number of intermediate neurons from the expert to be wrapped', default=None, type=int)
 parser.add_argument('--window_size', '-w', help='size of the sliding window', default=None, type=int)
 parser.add_argument('--stride', '-s', help='stride of the sliding window', default=None, type=int)
-parser.add_argument('--pca', '-p', help='if passed defines the number of components to consider with a pca applied on the lofargram', default=None, type=int)
+parser.add_argument('--pca', '-p', help='if passed defines the number of components to retain from a pca applied on the lofargram. -1 can be passed to retain all the components', 
+                    default=None, type=int)
 parser.add_argument('--bot', '-b', help='telegram bot token to report', default=None)
 parser.add_argument('--chat', '-c', help='chat id for the bot', default=None)
 
 args = parser.parse_args()
 model_name = args.model
+model_architecture = getattr(my_models, model_name)
 neurons = args.neurons
 fft_pts = args.fft_pts
 overlap = args.overlap
@@ -44,7 +48,9 @@ decimation = args.decimation
 bins = args.bins
 novelty_class = args.novelty
 folds = args.folds
-wneurons = args.wneurons
+if not args.expert is None:
+    committee_achitecture = getattr(my_models, args.expert)
+    committee_neurons = args.expert_neurons
 window_size = args.window_size
 stride = args.stride
 pca_components = args.pca
@@ -52,7 +58,6 @@ if pca_components == -1:
     pca_components = bins
 bot_token = args.bot
 chat_id = args.chat
-model_architecture = getattr(my_models, model_name)
 
 #HERE THE SCRIPT REALLY STARTS
 start_time = time.time()
@@ -78,19 +83,19 @@ TO_KNOWN_VALUES = lambda x: KNOWN_CLASSES_DICT[VALUE_MAPPING(x)]       #Function
 
 THRESHOLD = novelty_analysis.create_threshold((200,450), ((-1,0.5),(0.500000001,1)))
 
-base_path = os.path.join(LOFAR_FOLDER, 
+datapath = os.path.join(LOFAR_FOLDER, 
                 f'lofar_dataset_fft_pts_{fft_pts}_overlap_{overlap}_decimation_{decimation}_pca_{pca_components}_novelty_class_{novelty_class}_norm_l2')
 if window_size is None:
-    kfold_datapath = os.path.join(base_path, f'kfold_{folds}_folds', 'vectors')
+    kfold_datapath = os.path.join(datapath, f'kfold_{folds}_folds', 'vectors')
 else:
-    kfold_datapath = os.path.join(base_path, f'kfold_{folds}_folds', f'window_size_{window_size}_stride_{stride}')
+    kfold_datapath = os.path.join(datapath, f'kfold_{folds}_folds', f'window_size_{window_size}_stride_{stride}')
 
 if not os.path.exists(kfold_datapath):
     lofar_kfold_split(WAV_FOLDER, LOFAR_FOLDER, fft_pts, overlap, decimation, bins, novelty_class, folds, window_size, stride, pca_components)
 
-output_dir = os.path.join(OUTPUT_DIR, f'lofar_parameters_{fft_pts}_fft_pts_{decimation}_decimation_pca_{pca_components}_bins_{bins}', 
-                            f'{model_architecture.__name__}_intermediate_neurons{neurons}', 
-                            f'kfold_novelty_class_{novelty_class}')
+base_path = os.path.join(OUTPUT_DIR, f'lofar_parameters_{fft_pts}_fft_pts_{decimation}_decimation_pca_{pca_components}_bins_{bins}')
+output_dir = os.path.join(base_path, f'{model_architecture.__name__}_intermediate_neurons{neurons}', f'kfold_novelty_class_{novelty_class}')
+
 #Getting a bot to give live updates on output
 if bot_token:
     MESSAGE_ID = f'{socket.gethostname()} at {getpass.getuser()} user.\n'
@@ -118,17 +123,14 @@ try:
         print(PARAMS) 
         print('-------------------------------------------------------------------------------')
 
-        train_set, val_set, test_set = model_architecture.get_data(base_path, split, np.vectorize(TO_KNOWN_VALUES), args)
         output_dir = os.path.join(output_dir, f'fold_{fold_count}')
 
         if bot_token:
             bot.sendMessage(chat_id, MESSAGE_ID + f'Starting the {model_name} fitting for novelty_class {novelty_class} at fold {fold_count}')
         
         if my_models.expert_commitee in model_architecture.__bases__:
-
-            if bot_token:
-                bot.sendMessage(chat_id, MESSAGE_ID + 'Fitting the expert_committee')
-
+            
+            train_set, val_set, test_set = model_architecture.get_data(datapath, split, np.vectorize(TO_KNOWN_VALUES), args)
             experts = model_architecture.get_experts(train_set.input_shape(), neurons, KNOWN_CLASSES_NAMES)
             committee, experts_multi_inits = model_architecture.fit_committee(experts, 
                                                     KNOWN_CLASSES_NAMES, 
@@ -139,47 +141,52 @@ try:
                                                     chat_id,
                                                     MESSAGE_ID)
 
-            if not os.path.exists(output_dir):
-                os.makedirs(output_dir)
-
             for class_, multi_init in experts_multi_inits.items():
-                multi_init.to_json(os.path.join(output_dir, f'{class_}_expert_multi_init.json'))
+                save_dir = os.path.join(output_dir, 'experts_multi_init_log')
+                if not os.path.exists(save_dir):
+                    os.makedirs(save_dir)
+                multi_init.to_json(os.path.join(save_dir, f'{class_}_expert_multi_init_log.json'))
             
             committee_predictions = committee.predict(test_set)
             
             novelty_analysis.get_results(predictions=committee_predictions, labels=test_set.y_set, threshold=THRESHOLD, 
                                                             classes_names=CLASSES_NAMES, novelty_index=NOV_INDEX,
-                                                            filepath=os.path.join(output_dir, 'exp_results_frame.csv'))
-
-            del experts, experts_multi_inits, committee_predictions
-
-            if bot_token:
-                bot.sendMessage(chat_id, MESSAGE_ID + 'Fitting the wrapper')
-
-            wrapped_committee = model_architecture.get_wrapped_committee(committee, model_architecture.get_wrapper_layers(wneurons))
-            multi_init_log = model_architecture.fit_wrapped_committee(wrapped_committee, 
-                                                            train_set, 
-                                                            val_set, 
-                                                            bot,
-                                                            chat_id,
-                                                            MESSAGE_ID)
+                                                            filepath=os.path.join(output_dir, 'results_frame.csv'))
+        
+        elif model_architecture is my_models.neural_committee:
             
-            wrapped_committee.set_weights(multi_init_log.best_weights(metric='val_sparse_accuracy', mode='max', training_end=False))
-            wrapper_predictions = wrapped_committee.predict(x=test_set)
+            multi_inits_experts = os.path.join(base_path, 
+                                        f'{committee_achitecture.__name__}_intermediate_neurons{committee_neurons}', 
+                                        f'kfold_novelty_class_{novelty_class}', f'fold_{fold_count}', 'experts_multi_init_log')
+            
+            train_set, val_set, test_set = model_architecture.get_data(committee_achitecture, datapath, split, np.vectorize(TO_KNOWN_VALUES), args)
+            
+            wrapper_layers = model_architecture.get_wrapper_layers(neurons)
+            neural_committee = model_architecture.get_model(multi_inits_experts, wrapper_layers, train_set.input_shape())
+            multi_init_log = model_architecture.compile_and_fit(neural_committee, train_set, val_set, bot, chat_id, MESSAGE_ID)
+            
+            if not os.path.exists(output_dir):
+                os.makedirs(output_dir)
+            multi_init_log.to_json(os.path.join(output_dir, 'multi_init_log.json'))
+            
+            neural_committee.set_weights(multi_init_log.best_weights(metric='val_sparse_accuracy', mode='max', training_end=False))
+            predictions = neural_committee.predict(x=test_set)
 
-            novelty_analysis.get_results(predictions=wrapper_predictions, labels=test_set.y_set, threshold=THRESHOLD, 
+            novelty_analysis.get_results(predictions=predictions, labels=test_set.y_set, threshold=THRESHOLD, 
                                             classes_names=CLASSES_NAMES, novelty_index=NOV_INDEX,
-                                            filepath=os.path.join(output_dir, 'wrapper_results_frame.csv'))
-            del wrapped_committee, multi_init_log, wrapper_predictions
+                                            filepath=os.path.join(output_dir, 'results_frame.csv'))
 
+            del multi_inits_experts, wrapper_layers, neural_committee, predictions, multi_init_log
+            
         else:
 
+            train_set, val_set, test_set = model_architecture.get_data(datapath, split, np.vectorize(TO_KNOWN_VALUES), args)
             model = model_architecture.get_model(train_set.input_shape(), neurons)
             multi_init = model_architecture.compile_and_fit(model, train_set, val_set, bot, chat_id, MESSAGE_ID)
             model.set_weights(multi_init.best_weights(metric='val_sparse_accuracy', mode='max', training_end=False))
             if not os.path.exists(output_dir):
                 os.makedirs(output_dir)
-            multi_init.to_json(os.path.join(output_dir, 'multi_init_callback.json'))
+            multi_init.to_json(os.path.join(output_dir, 'multi_init_log.json'))
             predictions = model.predict(x=test_set)
             novelty_analysis.get_results(predictions=predictions, labels=test_set.y_set, threshold=THRESHOLD, 
                                             classes_names=CLASSES_NAMES, novelty_index=NOV_INDEX,
