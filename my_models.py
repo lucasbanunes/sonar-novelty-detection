@@ -1,6 +1,7 @@
 import os
 from copy import deepcopy
 
+import telegram
 import numpy as np
 from tensorflow import keras
 from tensorflow.keras import callbacks
@@ -16,14 +17,18 @@ class standard_model():
     @staticmethod
     def compile_and_fit(model,train_set, val_set, bot=None, chat_id=None, message_id=None):
 
+        if not bot is None:
+            try:
+                bot.sendMessage(chat_id, message_id + f'Starting {model.name} multi init')
+            except telegram.error.TimedOut:
+                pass
+
         optimizer = keras.optimizers.Adam(learning_rate=0.001)
         early_stop = callbacks.EarlyStopping(monitor = 'val_sparse_accuracy', min_delta=0.001, patience=30, restore_best_weights=True, mode='max')
         lr_reducer = callbacks.ReduceLROnPlateau(monitor='val_sparse_accuracy', factor=0.1, patience=7, min_lr=0.000001, mode='max')
         multi_init = training.MultiInitLog()
 
-        for init in range(NUMBER_OF_INITS):
-            if not bot is None:
-                bot.sendMessage(chat_id, message_id + f'Starting init {init+1}')
+        for _ in range(NUMBER_OF_INITS):
 
             model.compile(loss=keras.losses.mean_squared_error, 
                         optimizer = deepcopy(optimizer),
@@ -56,6 +61,12 @@ class expert_commitee():
         committee_experts = list()
 
         for class_name in classes:
+            
+            if not bot is None:
+                try:
+                    bot.sendMessage(chat_id, message_id + f'Expert for class {class_name} multi init')
+                except telegram.error.TimedOut:
+                    pass
 
             target_label = class_mapping[class_name]
             change_func = lambda x: np.array([1 if np.all(label == target_label) else -1 for label in x])
@@ -69,10 +80,6 @@ class expert_commitee():
             expert = experts[class_name]
 
             for init in range(NUMBER_OF_INITS):
-                message = f'expert for class {class_name}\nStarting init {init+1}'
-                print(message)
-                if bot:
-                    bot.sendMessage(chat_id, message_id + message)
 
                 expert.compile(loss=losses.expert_mse, 
                                 optimizer=deepcopy(optimizer), 
@@ -129,7 +136,7 @@ class cnn(standard_model):
 
     @staticmethod
     def get_model(input_shape, conv_neurons):
-        model = keras.Sequential()
+        model = keras.Sequential(name='cnn')
         model.add(Conv2D(conv_neurons, kernel_size=4, activation = 'tanh', input_shape=input_shape))
         model.add(MaxPool2D())
         model.add(Flatten())

@@ -98,8 +98,11 @@ output_dir = os.path.join(base_path, f'{model_architecture.__name__}_intermediat
 
 #Getting a bot to give live updates on output
 if bot_token:
-    MESSAGE_ID = f'{socket.gethostname()} at {getpass.getuser()} user.\n'
-    bot = telegram.Bot(bot_token)
+    try:
+        MESSAGE_ID = f'{socket.gethostname()} at {getpass.getuser()} user.\n'
+        bot = telegram.Bot(bot_token)
+    except telegram.error.TimedOut:
+        pass
 else:
     bot = None
     MESSAGE_ID = None
@@ -111,8 +114,11 @@ try:
     
     PARAMS = '\n'.join([f'{key}: {value}' for key,value in args.__dict__.items()])
     if bot_token:
-        message = MESSAGE_ID +'Starting the nn kfold training with the given parameters\n' + PARAMS
-        bot.sendMessage(chat_id, message)
+        try:
+            message = MESSAGE_ID +'Starting the nn kfold training with the given parameters\n' + PARAMS
+            bot.sendMessage(chat_id, message)
+        except telegram.error.TimedOut:
+            pass
 
     for split in range(folds):
 
@@ -126,7 +132,10 @@ try:
         output_dir = os.path.join(output_dir, f'fold_{fold_count}')
 
         if bot_token:
-            bot.sendMessage(chat_id, MESSAGE_ID + f'Starting the {model_name} fitting for novelty_class {novelty_class} at fold {fold_count}')
+            try:
+                bot.sendMessage(chat_id, MESSAGE_ID + f'Starting the {model_name} fitting for novelty_class {novelty_class} at fold {fold_count}')
+            except telegram.error.TimedOut:
+                pass
         
         if my_models.expert_commitee in model_architecture.__bases__:
             
@@ -216,10 +225,7 @@ try:
 
     with open(os.path.join(OUTPUT_DIR, 'training.log'), 'a') as log:
         start = time.ctime() + f'\nTraining finished successfully\n'
-        log.write(start + PARAMS + '\n')
-
-    if bot_token:
-        bot.sendMessage(chat_id, MESSAGE_ID + 'Finished')
+        log.write(start + PARAMS + '\n\n')
 
 except Exception as e:
     error_message = f'{type(e)}: {e}'
@@ -227,5 +233,5 @@ except Exception as e:
         bot.sendMessage(chat_id, MESSAGE_ID + '\n' + error_message)
     with open(os.path.join(OUTPUT_DIR, 'training.log'), 'a') as log:
         start = time.ctime() + f'\nTraining ended with an error\n{error_message}\n'
-        log.write(start + PARAMS + '\n')
+        log.write(start + PARAMS + '\n\n')
     raise e
