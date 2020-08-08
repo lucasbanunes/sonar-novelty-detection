@@ -94,7 +94,7 @@ if not os.path.exists(kfold_datapath):
     lofar_kfold_split(WAV_FOLDER, LOFAR_FOLDER, fft_pts, overlap, decimation, bins, novelty_class, folds, window_size, stride, pca_components)
 
 base_path = os.path.join(OUTPUT_DIR, f'lofar_parameters_{fft_pts}_fft_pts_{decimation}_decimation_pca_{pca_components}_bins_{bins}')
-output_dir = os.path.join(base_path, f'{model_architecture.__name__}_intermediate_neurons{neurons}', f'kfold_novelty_class_{novelty_class}')
+output_dir = os.path.join(base_path, f'{model_architecture.__name__}_intermediate_neurons_{neurons}', f'kfold_novelty_class_{novelty_class}')
 
 #Getting a bot to give live updates on output
 if bot_token:
@@ -155,8 +155,12 @@ try:
         
         elif model_architecture is my_models.neural_committee:
             
+            output_dir = os.path.join(base_path, 
+                            f'{model_architecture.__name__}_intermediate_neurons_{neurons}_committee_{committee_achitecture.__name__}_neurons_{neurons}', 
+                            f'kfold_novelty_class_{novelty_class}')
+            
             multi_inits_experts = os.path.join(base_path, 
-                                        f'{committee_achitecture.__name__}_intermediate_neurons{committee_neurons}', 
+                                        f'{committee_achitecture.__name__}_intermediate_neurons_{committee_neurons}', 
                                         f'kfold_novelty_class_{novelty_class}', f'fold_{fold_count}', 'experts_multi_init_log')
             
             train_set, val_set, test_set = model_architecture.get_data(committee_achitecture, datapath, split, np.vectorize(TO_KNOWN_VALUES), args)
