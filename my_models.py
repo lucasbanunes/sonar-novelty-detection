@@ -54,7 +54,7 @@ class expert_commitee():
 
         input_layer = keras.Input(train_set.input_shape())
         optimizer = keras.optimizers.Adam(learning_rate=0.01)
-        early_stop = keras.callbacks.EarlyStopping(monitor = 'val_expert_accuracy', min_delta=0.001, patience=30, mode='max')
+        early_stop = keras.callbacks.EarlyStopping(monitor = 'val_expert_accuracy', min_delta=0.001, patience=30, mode='max', restore_best_weights=True)
         lr = keras.callbacks.ReduceLROnPlateau(monitor='val_expert_accuracy', factor=0.1, patience=7, min_lr = 0.000001, mode='max')
         callbacks = [early_stop, lr]
         multi_inits = dict()
