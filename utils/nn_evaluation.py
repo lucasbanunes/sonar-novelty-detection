@@ -75,7 +75,8 @@ def output_report(output, classf, labels, classes_neurons, filepath=None):
 
     return report_frame
 
-def plot_cm(cm, classes, cmerr = None, filepath=None):
+def plot_cm(cm, classes, cmerr = None, filepath=None, 
+            xlabel='Predicted label', ylabel='True label', title='Confusion Matrix'):
 
     n_classes = len(classes)
 
@@ -99,9 +100,9 @@ def plot_cm(cm, classes, cmerr = None, filepath=None):
             yticks=np.arange(n_classes),
             xticklabels=classes,
             yticklabels=classes,
-            ylabel="True label",
-            xlabel="Predicted label",
-            title='Confusion Matrix')
+            ylabel=ylabel,
+            xlabel=xlabel,
+            title=title)
     
     if not filepath is None:
         folder, _ = os.path.split(filepath)
@@ -128,10 +129,21 @@ def plot_rep(rep, output_path, name_prefix=''):
                     np.array(rep.loc[:,column].columns, dtype=str),
                     filepath = filename)
         else:
-            plot_cm(rep.loc[:,column].values, 
-                    np.array(rep.loc[:,column].columns, dtype=str),
-                    rep.loc[:,column + '_err'].values,
-                    filename)
+            title_name = ' '.join(column.split('_'))
+            if title_name[-1] == '5':
+                title_name = title_name + ' percent'
+            if title_name == 'cm':
+                plot_cm(rep.loc[:,column].values, 
+                        np.array(rep.loc[:,column].columns, dtype=str),
+                        rep.loc[:,column + '_err'].values,
+                        filename)
+            else:
+                plot_cm(rep.loc[:,column].values, 
+                        np.array(rep.loc[:,column].columns, dtype=str),
+                        rep.loc[:,column + '_err'].values,
+                        filename,
+                        xlabel='Class neuron',
+                        title='Output avg ' + title_name)
         plt.close()
 
 def plot_training(metric_name, model_name, novelty_class, n_folds, model_metrics, output_path):
