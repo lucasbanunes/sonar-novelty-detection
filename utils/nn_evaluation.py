@@ -15,27 +15,46 @@ from data_analysis.model_evaluation import novelty_analysis
 def get_avg_err(data):
     avg = np.sum(data, axis=0)/len(data)
     err = np.sqrt(np.var(data, axis=0))
-    err, decimals = da_utils.around(err)
-    avg = np.around(avg, decimals)
+    for i in range(len(err)):
+        err[i], decimals = da_utils.around(err[i])
+        decimals = 3 if err[i] == 0 else decimals
+        avg[i] = np.around(avg[i], decimals)
     return avg, err
 
 def output_report(output, classf, labels, classes_neurons, filepath=None):
-    """Returns a report from the neurons output where the columns are the results for the predicted classes
-    and the rows are the true labels of that class"""
+    """Returns a report from the neurons output where the columns are the results from the neurons of the classes
+    and the rows are the true labels of that class. on the cm column the columns are the predicted classes"""
     data = list()
+    num_neurons = output.shape[-1]
+    have_zeros = [False for _ in range(num_neurons)]
+    outer_column = ['all_data', 'all_data_err', 'max_5', 'max_5_err', 'min_5', 'min_5_err', 'cm']
     classes = list(classes_neurons.keys())
     for class_, neuron in classes_neurons.items():
         class_output = output[labels == class_]
+        if len(class_output) == 0:
+            have_zeros[neuron] = True
+            zeros_array = np.zeros((len(outer_column)-1)*num_neurons, dtype = np.uint8)
+            data.append(zeros_array)
+            continue
         class_output_avg, class_output_err = get_avg_err(class_output)
         sortarg = class_output[:, neuron].argsort(axis=0)
-        max_5_percent = class_output[sortarg[np.math.ceil(len(sortarg)*0.95):]]
+        max_5_percent = class_output[sortarg[np.math.floor(len(sortarg)*0.95):]]
         max_5_avg, max_5_err = get_avg_err(max_5_percent)
         min_5_percent = class_output[sortarg[:np.math.ceil(len(sortarg)*0.05)]]
         min_5_avg, min_5_err = get_avg_err(min_5_percent)
-        data.append([class_output_avg, class_output_err, max_5_avg, max_5_err, min_5_avg, min_5_err])
+        data.append(np.concatenate((class_output_avg, class_output_err, max_5_avg, max_5_err, min_5_avg, min_5_err), axis=0))
     cm = confusion_matrix(labels, classf, normalize='true')
+    if np.any(have_zeros):
+        cm_index = 0
+        current_size = len(cm)
+        for i in range(len(have_zeros)):
+            if have_zeros[i]:
+                cm = np.insert(cm, i, np.zeros(current_size, dtype=np.uint8), axis=1)
+                current_size += 1
+                cm = np.insert(cm, i, np.zeros(current_size, dtype=np.uint8), axis=0)
+
     data = np.concatenate((np.array(data), cm), axis=1)
-    outer_column = ['all_data', 'all_data_err', 'max_5', 'max_5_err', 'min_5', 'min_5_err', 'cm']
+    
     columns = pd.MultiIndex.from_product([outer_column, classes])
     index = classes
     report_frame = pd.DataFrame(data, columns=columns, index=index)
@@ -62,7 +81,7 @@ def plot_cm(cm, classes, cmerr = None, filepath=None):
     for i, j in product(range(n_classes), range(n_classes)):
         color = cmap_max if cm[i,j] < thresh else cmap_min
         if cmerr is None:
-            text = str(np.around(cm[i,j], 2))
+            text = str(np.around(cm[i,j], 3))
         else:
             err, decimals = da_utils.around(cmerr[i,j])
             value = np.around(cm[i,j], decimals)
@@ -85,12 +104,11 @@ def plot_cm(cm, classes, cmerr = None, filepath=None):
     return fig, axis
 
 def plot_rep(rep, output_path, name_prefix=''):
-
     try:
         rep['cm_err']
         avg_frame=True
         final_str = '_avg_plot.png'
-    except:
+    except KeyError:
         avg_frame=False
         final_str = '_plot.png'
 
@@ -101,12 +119,13 @@ def plot_rep(rep, output_path, name_prefix=''):
         if (not avg_frame) and (column == 'cm'):
             plot_cm(rep.loc[:,column].values, 
                     np.array(rep.loc[:,column].columns, dtype=str),
-                    filename)
+                    filepath = filename)
         else:
             plot_cm(rep.loc[:,column].values, 
                     np.array(rep.loc[:,column].columns, dtype=str),
                     rep.loc[:,column + '_err'].values,
                     filename)
+        plt.close()
 
 def plot_training(metric_name, model_name, novelty_class, n_folds, model_metrics, output_path):
     
@@ -142,8 +161,8 @@ def frame_avg_var(frames_list, output_path, name_prefix=''):
 def output_report_avg(reps, output_path, name_prefix=''):
     
     avg_frame = sum(reps)/len(reps)
-    classes = np.array(avg_frame.loc[:'cm'].columns.values, dtype=str)
-    cm_err = np.sqrt(np.var([rep.loc[:'cm'].values for rep in reps], axis=0))
+    classes = np.array(avg_frame.loc[:,'cm'].columns.values, dtype=str)
+    cm_err = np.sqrt(np.var([rep.loc[:,'cm'].values for rep in reps], axis=0))
     cm_err = pd.DataFrame(cm_err, columns=pd.MultiIndex.from_product([['cm_err'], classes]), index=classes)
     avg_frame = avg_frame.join(cm_err)
     del cm_err
@@ -161,7 +180,7 @@ def output_report_avg(reps, output_path, name_prefix=''):
 def eval_fold(novelty_class, results_path, output_path, name_prefix=''):
     results_frame = pd.read_csv(results_path, header=[0,1])
     
-    output = results_frame.loc[:'Neurons'].values
+    output = results_frame.loc[:,'Neurons'].values
     labels = np.array(results_frame.loc[:, ('Labels', 'L')].values.flatten(), dtype=str)
     classf = np.array(results_frame.iloc[:, 3].values, dtype=str)
     classes = np.unique(classf)
@@ -199,7 +218,7 @@ def eval_all_folds(nov_reps, classf_reps, eval_frames, output_path, name_prefix=
 
     return nov_rep_avg, classf_rep_avg, eval_frames_avg, eval_frames_var, noc_area_dict
 
-def evaluate_kfolds(current_dir, model_name, folds, novelty_class, colors):
+def evaluate_kfolds(current_dir, model_name, folds, novelty_class):
 
     eval_frames = list()
     classf_reps = list()
@@ -223,11 +242,11 @@ def evaluate_kfolds(current_dir, model_name, folds, novelty_class, colors):
 
         print(f'Fold {fold_count} novelty {novelty_class}')
         if is_expert:
-            current_dir = os.path.join(current_dir, 'experts')
+            current_dir = os.path.join(current_dir, 'experts_multi_init_log')
             for expert_log in np.sort(os.listdir(current_dir)):
                 expert_name = '_'.join(expert_log.split('_')[:2])
 
-                multi_init - MultiInitLog.from_json(os.path.join(current_dir, expert_log))
+                multi_init = MultiInitLog.from_json(os.path.join(current_dir, expert_log))
                 best_init = multi_init.get_best_init('val_expert_accuracy', 'max', False)
                 training_log = multi_init.inits[best_init]
 
@@ -235,11 +254,13 @@ def evaluate_kfolds(current_dir, model_name, folds, novelty_class, colors):
                     model_metrics = {metric: list() for metric in training_log['params']['metrics']}
                     
                 for metric in training_log['params']['metrics']:
-                    model_metrics[metric].append(training_log['history'][metric])
+                    model_metrics[metric].append(training_log['logs'][metric])
                 
                 expert_metrics[expert_name] = model_metrics
             
                 del multi_init, best_init, training_log
+            
+            current_dir, _ = os.path.split(current_dir)
 
             if create_dict:
                 create_dict = False
@@ -254,10 +275,9 @@ def evaluate_kfolds(current_dir, model_name, folds, novelty_class, colors):
                 create_dict = False                        
             
             for metric in training_log['params']['metrics']:
-                    model_metrics[metric].append(training_log['history'][metric])
+                    model_metrics[metric].append(training_log['logs'][metric])
             
             del multi_init, best_init, training_log
-
         nov_rep, classf_rep, eval_frame = eval_fold(novelty_class, os.path.join(current_dir, 'results_frame.csv'), current_dir)
         eval_frames.append(eval_frame)
         classf_reps.append(classf_rep)
@@ -306,10 +326,10 @@ def evaluate_kfolds(current_dir, model_name, folds, novelty_class, colors):
     plt.figure(figsize=(12,3))
     plt.grid(color='k', alpha=0.5, linestyle='dashed', linewidth=0.5)
     plt.title(f'Novelty class {novelty_class}')
-    zip_iterator = zip(noc_area_dict['folds'], eval_frames, colors[:folds], range(1, folds+1))
-    for area, eval_frame, color , fold in zip_iterator:
+    zip_iterator = zip(noc_area_dict['folds'], eval_frames, range(1, fold_count))
+    for area, eval_frame, fold in zip_iterator:
         plt.plot(eval_frame.loc['Nov rate'], eval_frame.loc['Trigger rate'], 
-                    label=f'Fold {fold} Area = {round(area, 2)}', color=color)
+                    label=f'Fold {fold} Area = {round(area, 2)}')
     plt.ylim(0,1)
     plt.xlim(0,1)
     plt.ylabel('Trigger Rate')
