@@ -26,26 +26,35 @@ def output_report(output, classf, labels, classes_neurons, filepath=None):
     and the rows are the true labels of that class. on the cm column the columns are the predicted classes"""
     data = list()
     num_neurons = output.shape[-1]
-    have_zeros = [False for _ in range(num_neurons)]
-    outer_column = ['all_data', 'all_data_err', 'max_5', 'max_5_err', 'min_5', 'min_5_err', 'cm']
     classes = list(classes_neurons.keys())
+    have_zeros = [False for _ in range(num_neurons)]
+
+    outer_column = ['all_data', 'all_data_err', 'max_5', 'max_5_err', 'min_5', 'min_5_err', 'cm']
+    columns = pd.MultiIndex.from_product([outer_column, classes])
+    columns = columns.insert(0, ('n_events', 'n_events'))
+    
     for class_, neuron in classes_neurons.items():
+
         class_output = output[labels == class_]
-        if len(class_output) == 0:
+        n_events = len(class_output)
+        if n_events == 0:
             have_zeros[neuron] = True
-            zeros_array = np.zeros((len(outer_column)-1)*num_neurons, dtype = np.uint8)
+            zeros_array = np.zeros(len(columns)-len(classes), dtype = np.uint8)
             data.append(zeros_array)
             continue
+
         class_output_avg, class_output_err = get_avg_err(class_output)
         sortarg = class_output[:, neuron].argsort(axis=0)
         max_5_percent = class_output[sortarg[np.math.floor(len(sortarg)*0.95):]]
         max_5_avg, max_5_err = get_avg_err(max_5_percent)
         min_5_percent = class_output[sortarg[:np.math.ceil(len(sortarg)*0.05)]]
         min_5_avg, min_5_err = get_avg_err(min_5_percent)
-        data.append(np.concatenate((class_output_avg, class_output_err, max_5_avg, max_5_err, min_5_avg, min_5_err), axis=0))
+        to_append = np.concatenate(([n_events], class_output_avg, class_output_err, max_5_avg, max_5_err, min_5_avg, min_5_err), axis=0)        
+        data.append(to_append)
+
     cm = confusion_matrix(labels, classf, normalize='true')
+    
     if np.any(have_zeros):
-        cm_index = 0
         current_size = len(cm)
         for i in range(len(have_zeros)):
             if have_zeros[i]:
@@ -54,8 +63,6 @@ def output_report(output, classf, labels, classes_neurons, filepath=None):
                 cm = np.insert(cm, i, np.zeros(current_size, dtype=np.uint8), axis=0)
 
     data = np.concatenate((np.array(data), cm), axis=1)
-    
-    columns = pd.MultiIndex.from_product([outer_column, classes])
     index = classes
     report_frame = pd.DataFrame(data, columns=columns, index=index)
 
@@ -161,17 +168,22 @@ def frame_avg_var(frames_list, output_path, name_prefix=''):
 def output_report_avg(reps, output_path, name_prefix=''):
     
     avg_frame = sum(reps)/len(reps)
+
     classes = np.array(avg_frame.loc[:,'cm'].columns.values, dtype=str)
     cm_err = np.sqrt(np.var([rep.loc[:,'cm'].values for rep in reps], axis=0))
     cm_err = pd.DataFrame(cm_err, columns=pd.MultiIndex.from_product([['cm_err'], classes]), index=classes)
     avg_frame = avg_frame.join(cm_err)
     del cm_err
+
     errors = np.array([rep.loc[:, 'all_data_err'].values for rep in reps])
     avg_frame.loc[:, 'all_data_err'] = np.sqrt(np.sum(errors ** 2, axis=0))/len(errors)
     errors = np.array([rep.loc[:, 'min_5_err'].values for rep in reps])
     avg_frame.loc[:, 'min_5_err'] = np.sqrt(np.sum(errors ** 2, axis=0))/len(errors)
     errors = np.array([rep.loc[:, 'max_5_err'].values for rep in reps])
     avg_frame.loc[:, 'max_5_err'] = np.sqrt(np.sum(errors ** 2, axis=0))/len(errors)
+
+    events_err = np.sqrt(np.var([rep.loc[:,'n_events'].values for rep in reps], axis=0))
+    avg_frame.insert(1, ('n_events', 'err'), events_err)
 
     avg_frame.to_csv(os.path.join(output_path, name_prefix + 'rep_avg.csv'))
 
