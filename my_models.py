@@ -233,6 +233,21 @@ class mlp(standard_model):
 
         return train_set, val_set, test_set
 
+class windowed_mlp(standard_model):
+
+    @staticmethod
+    def get_model(input_shape, intermediate_neurons):
+        input_layer = keras.Input(input_shape)
+        x = keras.layers.Flatten()(input_layer)
+        x = Dense(intermediate_neurons, activation='tanh', input_shape=input_shape)(x)
+        output_layer = Dense(3, activation='tanh')(x)
+        model = keras.Model(input_layer, output_layer, name='mlp')
+        return model
+
+    @staticmethod
+    def get_data(base_path, split, to_known_value, parsed_args):
+        return cnn.get_data(base_path, split, to_known_value, parsed_args)
+    
 class mlp_expert(expert_commitee):
 
     @staticmethod
@@ -246,6 +261,25 @@ class mlp_expert(expert_commitee):
             expert_name = f'{class_name}_expert'
             input_layer = keras.Input(shape=input_shape, name=expert_name + '_input')
             x = Dense(intermediate_neurons, activation='tanh', input_shape=input_shape)(input_layer)
+            output_layer = Dense(1, activation='tanh')(x) 
+            model = keras.Model(input_layer, output_layer, name=expert_name)
+            experts[class_name] = model
+        return experts
+
+class windowed_mlp_expert(expert_commitee):
+
+    @staticmethod
+    def get_data(base_path, split, to_known_value, parsed_args):
+        return cnn.get_data(base_path, split, to_known_value, parsed_args)
+
+    @staticmethod
+    def get_experts(input_shape, intermediate_neurons, classes):
+        experts = dict()
+        for class_name  in classes:
+            expert_name = f'{class_name}_expert'
+            input_layer = keras.Input(shape=input_shape, name=expert_name + '_input')
+            x = keras.layers.Flatten()(input_layer)
+            x = Dense(intermediate_neurons, activation='tanh', input_shape=input_shape)(x)
             output_layer = Dense(1, activation='tanh')(x) 
             model = keras.Model(input_layer, output_layer, name=expert_name)
             experts[class_name] = model
