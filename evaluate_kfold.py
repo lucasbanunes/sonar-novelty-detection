@@ -3,25 +3,34 @@
 import os
 import gc
 import multiprocessing
+import argparse
+
 import numpy as np
-from setup import setup
 
+from config import setup
 #Gets enviroment variables and appends needed custom packages
-LOFAR_FOLDER, OUTPUT_DIR, RAW_DATA = setup()
+setup()
+from utils.nn_evaluation import evaluate_kfolds
 
-import sonar_utils
-
-COLORS = ('#000000', '#008000', '#FF0000', '#FFFF00', '#0000FF', '#808080', '#FF00FF', '#FFA500', '#A52A2A', '#00FFFF')
 LINES = '--------------------------------------------------------------------\n'
+
+parser = argparse.ArgumentParser(description='Evaluates the results of a neural network training',
+                                    prog='Neual Network Kfold evaluation')
+parser.add_argument('dir', help='Directory generated from nn_kfold.py with the results and training history')
+
+OUTPUT_DIR = parser.parse_args().dir
 
 lofar_params_folders = np.sort(os.listdir(OUTPUT_DIR))
 for lofar_params_folder in lofar_params_folders:
     current_dir = os.path.join(OUTPUT_DIR, lofar_params_folder)
     if not os.path.isdir(current_dir):
         continue
-
-    fft_pts = lofar_params_folder.split('_')[2]
-    decimation = lofar_params_folder.split('_')[-2]
+    
+    splitted = lofar_params_folder.split('_')
+    fft_pts = splitted[2]
+    decimation = splitted[4]
+    pca = splitted[-3]
+    bins = splitted[-1]
 
     model_neurons_folders = np.sort(os.listdir(current_dir))
 
@@ -32,21 +41,19 @@ for lofar_params_folder in lofar_params_folders:
             continue
         method_novelty_folders = np.sort(os.listdir(current_dir))
         
-        num_neurons = model_neurons_folder[-2:]
-        splitted_name = model_neurons_folder.split('_')
+        splitted = model_neurons_folder.split('_')
+        splitted_name = list()
+        for string in splitted:
+            if string == 'intermediate':
+                break
+            splitted_name.append(string)
+        model_name = '_'.join(splitted_name)
+        num_neurons = splitted[splitted.index('neurons') + 1]
+        del splitted, splitted_name
 
-        if 'old' in splitted_name:
+        if model_name[:3] == 'old':
             current_dir, _ = os.path.split(current_dir)
-            del splitted_name
             continue
-        else:
-            model_name = '_'.join(splitted_name[0:-2])
-            del splitted_name
-
-        if model_name.split('_')[-1] == 'expert':
-            function = sonar_utils.evaluate_kfolds_committee
-        else:
-            function = sonar_utils.evaluate_kfolds_standard
         
         processes = list()
 
@@ -56,10 +63,13 @@ for lofar_params_folder in lofar_params_folders:
                 current_dir, _ = os.path.split(current_dir)
                 continue
             folds = np.sort(os.listdir(current_dir))
+
             novelty_class = method_novelty_folder[-1]
             fold_count = 1
+            evaluate_kfolds(current_dir, model_name, folds, novelty_class)
 
-            processes.append(multiprocessing.Process(target=function, args=(current_dir, model_name, folds, novelty_class, COLORS), daemon=True))
+            import pdb;pdb.set_trace()
+            processes.append(multiprocessing.Process(target=evaluate_kfolds, args=(current_dir, model_name, folds, novelty_class), daemon=True))
 
             current_dir, _ = os.path.split(current_dir)
         
