@@ -37,6 +37,7 @@ parser.add_argument('--pca', '-p', help='if passed defines the number of compone
                     default=None, type=int)
 parser.add_argument('--bot', '-b', help='telegram bot token to report', default=None)
 parser.add_argument('--chat', '-c', help='chat id for the bot', default=None)
+parser.add_argument('--gpu', help='if true enables gpu training', default=False, type=bool)
 
 args = parser.parse_args()
 model_name = args.model
@@ -58,6 +59,8 @@ if pca_components == -1:
     pca_components = bins
 bot_token = args.bot
 chat_id = args.chat
+if not args.gpu:
+    os.environ["CUDA_VISIBLE_DEVICES"]="-1"
 
 #HERE THE SCRIPT REALLY STARTS
 start_time = time.time()
