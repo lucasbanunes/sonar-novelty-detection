@@ -7,6 +7,7 @@ import getpass
 import argparse
 import telegram
 import numpy as np
+import tensorflow as tf
 from tensorflow import keras
 
 from config import setup
@@ -37,7 +38,7 @@ parser.add_argument('--pca', '-p', help='if passed defines the number of compone
                     default=None, type=int)
 parser.add_argument('--bot', '-b', help='telegram bot token to report', default=None)
 parser.add_argument('--chat', '-c', help='chat id for the bot', default=None)
-parser.add_argument('--gpu', help='if true enables gpu training', default=False, type=bool)
+parser.add_argument('--gpu', help='if true enables gpu training', default=None, choices=['all', 'growth'])
 
 args = parser.parse_args()
 model_name = args.model
@@ -59,8 +60,15 @@ if pca_components == -1:
     pca_components = bins
 bot_token = args.bot
 chat_id = args.chat
-if not args.gpu:
+
+if args.gpu is None:
     os.environ["CUDA_VISIBLE_DEVICES"]="-1"
+elif args.gpu == 'growth':
+    gpus = gpus = tf.config.experimental.list_physical_devices('GPU')
+    for gpu in gpus:
+        tf.config.experimental.set_memory_growth(gpu, True)
+    logical_gpus = tf.config.experimental.list_logical_devices('GPU')
+    print(len(gpus), "Physical GPUs,", len(logical_gpus), "Logical GPUs")
 
 #HERE THE SCRIPT REALLY STARTS
 start_time = time.time()
