@@ -387,3 +387,36 @@ def evaluate_kfolds(current_dir, model_name, folds, novelty_class):
 
     fig.savefig(fname=os.path.join(current_dir, 'average_acc_curve.png'), dpi=200, format='png')
     plt.close(fig)
+
+def get_val_results_per_novelty(output_dir, datapath, threshold, classes_names, nov_index):
+
+    folds = np.sort(os.listdir(output_dir))
+    for fold in folds:
+
+        current_dir = os.path.join(output_dir, fold)
+        if not os.path.isdir(current_dir):
+            current_dir, _ = os.path.split(current_dir)
+            continue
+
+        datapath = os.path.join(datapath, f'split_{split}.npz')
+        data = np.load(datapath, allow_pickle=True)
+
+        if models.expert_commitee in model_architecture.__bases__:
+            model = nn_utils.load_expert_committee(os.path.join(current_dir, 'experts_multi_init_log'), 'val_expert_accuracy', 'max', False)
+        else:
+            log = nn_utils.MultiInitLog.from_json(os.path.join(current_dir, 'multi_init_log.json'))
+            model = log.get_best_model(metric='val_sparse_accuracy', mode='max', training_end=False)
+
+        predictions = model.predict(data['x_val'])
+        novelty_analysis.get_results(predictions=predictions, labels=data['y_val'], threshold=THRESHOLD, 
+                                        classes_names=CLASSES_NAMES, novelty_index=NOV_INDEX,
+                                        filepath=os.path.join(current_dir, 'results_frame.csv'))
+
+        del model, predictions
+        
+        gc.collect()
+        keras.backend.clear_session()
+
+        fold_count += 1
+        current_dir, _ = os.path.split(current_dir)
+        datapath, _ = os.path.split(datapath)
