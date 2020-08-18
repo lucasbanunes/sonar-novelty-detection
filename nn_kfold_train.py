@@ -15,14 +15,14 @@ from utils.data_split import lofar_kfold_split
 #Gets enviroment variables and appends needed custom packages
 WAV_FOLDER, LOFAR_FOLDER, OUTPUT_DIR = setup()
 
-import my_models
+from neural_networks import models
 from data_analysis.neural_networks.training import MultiInitLog
 from data_analysis.model_evaluation import novelty_analysis
 from data_analysis.utils.utils import to_sparse_tanh
 
 parser = argparse.ArgumentParser(description='Trains a neural network model with sonar lofar data generated with the given parameters and cross-validates using kfold.',
                                     prog='Neual Network Kfold validation')
-parser.add_argument('model', help='model instanciated in my_models to be used')
+parser.add_argument('model', help='model instanciated in models to be used')
 parser.add_argument('neurons', help='number of neurons in the intermediate layer', type=int)
 parser.add_argument('fft_pts', help='number of fft points used to generate the lofar data', type=int)
 parser.add_argument('overlap', help='number of overlap used to generate the lofar data', type=int)
@@ -42,7 +42,7 @@ parser.add_argument('--gpu', help='if true enables gpu training', default=None, 
 
 args = parser.parse_args()
 model_name = args.model
-model_architecture = getattr(my_models, model_name)
+model_architecture = getattr(models, model_name)
 neurons = args.neurons
 fft_pts = args.fft_pts
 overlap = args.overlap
@@ -51,7 +51,7 @@ bins = args.bins
 novelty_class = args.novelty
 folds = args.folds
 if not args.expert is None:
-    committee_achitecture = getattr(my_models, args.expert)
+    committee_achitecture = getattr(models, args.expert)
     committee_neurons = args.expert_neurons
 window_size = args.window_size
 stride = args.stride
@@ -67,8 +67,6 @@ elif args.gpu == 'growth':
     gpus = gpus = tf.config.experimental.list_physical_devices('GPU')
     for gpu in gpus:
         tf.config.experimental.set_memory_growth(gpu, True)
-    logical_gpus = tf.config.experimental.list_logical_devices('GPU')
-    print(len(gpus), "Physical GPUs,", len(logical_gpus), "Logical GPUs")
 
 #HERE THE SCRIPT REALLY STARTS
 start_time = time.time()
@@ -148,7 +146,7 @@ try:
             except telegram.error.TimedOut:
                 pass
         
-        if my_models.expert_commitee in model_architecture.__bases__:
+        if models.expert_commitee in model_architecture.__bases__:
             
             train_set, val_set, test_set = model_architecture.get_data(datapath, split, np.vectorize(TO_KNOWN_VALUES), args)
             experts = model_architecture.get_experts(train_set.input_shape(), neurons, KNOWN_CLASSES_NAMES)
@@ -173,7 +171,7 @@ try:
                                                             classes_names=CLASSES_NAMES, novelty_index=NOV_INDEX,
                                                             filepath=os.path.join(output_dir, 'results_frame.csv'))
         
-        elif model_architecture is my_models.neural_committee:
+        elif model_architecture is models.neural_committee:
             
             output_dir = os.path.join(base_path, 
                             f'{model_architecture.__name__}_intermediate_neurons_{neurons}_committee_{committee_achitecture.__name__}_neurons_{neurons}', 
