@@ -79,7 +79,7 @@ class expert_commitee():
             multi_init = training.MultiInitLog()
             expert = experts[class_name]
 
-            for init in range(NUMBER_OF_INITS):
+            for _ in range(NUMBER_OF_INITS):
 
                 expert.compile(loss=losses.expert_mse, 
                                 optimizer=deepcopy(optimizer), 
@@ -137,7 +137,7 @@ class cnn(standard_model):
     @staticmethod
     def get_model(input_shape, conv_neurons):
         model = keras.Sequential(name='cnn')
-        model.add(Conv2D(conv_neurons, kernel_size=4, activation = 'tanh', input_shape=input_shape))
+        model.add(Conv2D(conv_neurons, kernel_size=5, activation = 'tanh', input_shape=input_shape))
         model.add(MaxPool2D())
         model.add(Flatten())
         model.add(Dense(3, activation='tanh'))
@@ -179,7 +179,7 @@ class cnn_expert(expert_commitee):
         for class_name  in classes:
             expert_name = f'{class_name}_expert'
             input_layer = keras.Input(shape=input_shape, name=expert_name + '_input')
-            x = Conv2D(conv_neurons, kernel_size=4, activation = 'tanh', input_shape=input_shape)(input_layer)
+            x = Conv2D(conv_neurons, kernel_size=5, activation = 'tanh', input_shape=input_shape)(input_layer)
             x = MaxPool2D()(x)
             x = Flatten()(x)
             output_layer = Dense(1, activation='tanh')(x) 
@@ -195,7 +195,7 @@ class cnn_mlp_expert(expert_commitee):
         for class_name in classes:
             expert_name = f'{class_name}_expert'
             input_layer = keras.Input(shape=input_shape, name=expert_name + '_input')
-            x = Conv2D(conv_neurons, kernel_size=4, activation = 'tanh')(input_layer)
+            x = Conv2D(conv_neurons, kernel_size=5, activation = 'tanh')(input_layer)
             x = MaxPool2D()(x)
             x = Flatten()(x)
             x = Dense(10, activation='tanh')(x)
