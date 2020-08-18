@@ -17,9 +17,9 @@ def setup():
             raw_folder = '/home/lucas_nunes/Documentos/datasets/raia_acustica'
         elif host_name == 'lucas-ideapad-320-15IKB':
             sys.path.append('/home/lucas_nunes/Repositories/data-analysis')
-            lofar_folder = '/home/lucas_nunes/Documentos/datasets/lofar_data'
-            output_dir = '/home/lucas_nunes/Documentos/sonar_output'
-            raw_folder = '/home/lucas_nunes/Documentos/datasets/raia_acustica'
+            lofar_folder = '/mnt/1733DB9266D900A4/datasets/lofar_data'
+            output_dir = '/mnt/1733DB9266D900A4/sonar_output'
+            raw_folder = '/mnt/1733DB9266D900A4/datasets/raia_acustica'
         else:   #Working on Docker
             sys.path.append('/home/data-analysis')
             lofar_folder = '/home/datasets/lofar_data'
