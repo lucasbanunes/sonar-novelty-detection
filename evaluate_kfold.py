@@ -10,7 +10,7 @@ import numpy as np
 from config import setup
 #Gets enviroment variables and appends needed custom packages
 setup()
-from utils.nn_evaluation import evaluate_kfolds
+from neural_networks.evaluation import evaluate_kfolds
 
 LINES = '--------------------------------------------------------------------\n'
 
@@ -28,7 +28,7 @@ for lofar_params_folder in lofar_params_folders:
     
     splitted = lofar_params_folder.split('_')
     fft_pts = splitted[2]
-    decimation = splitted[4]
+    decimation = splitted[5]
     pca = splitted[-3]
     bins = splitted[-1]
 
@@ -66,9 +66,6 @@ for lofar_params_folder in lofar_params_folders:
 
             novelty_class = method_novelty_folder[-1]
             fold_count = 1
-            evaluate_kfolds(current_dir, model_name, folds, novelty_class)
-
-            import pdb;pdb.set_trace()
             processes.append(multiprocessing.Process(target=evaluate_kfolds, args=(current_dir, model_name, folds, novelty_class), daemon=True))
 
             current_dir, _ = os.path.split(current_dir)
