@@ -71,13 +71,42 @@ def output_report(output, classf, labels, classes_neurons, filepath=None):
     report_frame = pd.DataFrame(data, columns=columns, index=index)
 
     if not filepath is None:
-        if not filepath is None:
-            folder, _ = os.path.split(filepath)
-            if not os.path.exists(folder):
-                os.makedirs(folder)
-            report_frame.to_csv(filepath, index = False)
+        folder, _ = os.path.split(filepath)
+        if not os.path.exists(folder):
+            os.makedirs(folder)
+        report_frame.to_csv(filepath, index = False)
 
     return report_frame
+
+def output_hist(results_frame, classes, out_range, filepath=None, **fig_kw):
+
+    if type(results_frame) is pd.DataFrame:
+        output = results_frame.loc[:,'Neurons'].values
+        labels = results_frame.loc[:,'Labels'].values.flatten()
+    else:
+        output = np.concatenate([frame.loc[:,'Neurons'].values for frame in results_frame], axis=0)
+        labels = np.concatenate([frame.loc[:,'Labels'].values.flatten() for frame in results_frame], axis=0)
+
+    n_neurons = output.shape[1]
+    fig, axis = plt.subplots(n_neurons, len(classes), **fig_kw)
+
+    for neuron, cls_index in product(range(n_neurons), range(len(classes))):
+        neuron_out = output[:,neuron][labels == classes[cls_index]]
+        current_axis = axis[neuron, cls_index]
+        current_axis.hist(neuron_out, range=out_range)
+        current_axis.tick_params('both', labelsize='small')
+        if cls_index == 0:
+            current_axis.set_ylabel(f'Neuron #{neuron}')
+        if neuron == 0:
+            current_axis.set_xlabel(f'Class {classes[cls_index]}')
+            current_axis.xaxis.set_label_position('top')
+    plt.tight_layout(0.25)
+
+    if not filepath is None:
+        folder, _ = os.path.split(filepath)
+        if not os.path.exists(folder):
+            os.makedirs(folder)
+        fig.savefig(filepath, dpi=200, format='png')
 
 def plot_cm(cm, classes, cmerr = None, filepath=None, 
             xlabel='Predicted label', ylabel='True label', title='Confusion Matrix'):
@@ -206,7 +235,7 @@ def output_report_avg(reps, output_path, name_prefix=''):
     return avg_frame
 
 def eval_fold(novelty_class, results_path, output_path, name_prefix=''):
-    results_frame = pd.read_csv(results_path, header=[0,1])
+    results_frame = pd.read_csv(os.path.join(results_path, 'results_frame.csv'), header=[0,1])
     
     output = results_frame.loc[:,'Neurons'].values
     labels = np.array(results_frame.loc[:, ('Labels', 'L')].values.flatten(), dtype=str)
@@ -220,20 +249,26 @@ def eval_fold(novelty_class, results_path, output_path, name_prefix=''):
                                 os.path.join(output_path, name_prefix + 'nov_rep.csv'))
     evaluation_frame = novelty_analysis.evaluate_nov_detection(results_frame, 
                                                 filepath=os.path.join(output_path, name_prefix + 'eval_frame.csv'))
+    val_results_frame = pd.read_csv(os.path.join(results_path, 'results_frame.csv'), header=[0,1])
+    val_eval_frame = novelty_analysis.evaluate_nov_detection(val_results_frame, 
+                                                filepath=os.path.join(output_path, name_prefix + 'val_eval_frame.csv'))
 
     plot_rep(nov_rep, output_path, name_prefix + 'nov_')
     plot_rep(classf_rep, output_path, name_prefix + 'classf_')
+
     novelty_analysis.plot_noc_curve(results_frame, novelty_class, filepath=os.path.join(output_path, name_prefix + 'noc_curve.png'))
     novelty_analysis.plot_accuracy_curve(results_frame, novelty_class, filepath=os.path.join(output_path, name_prefix + 'acc_curve.png'))
+    output_hist(results_frame, np.append(classes, 'Nov'), out_range=(-1,1), filepath=os.path.join(output_path, name_prefix + 'output_hist.png'))
 
-    return nov_rep, classf_rep, evaluation_frame
+    return results_frame, nov_rep, classf_rep, evaluation_frame, val_eval_frame
 
-def eval_all_folds(nov_reps, classf_reps, eval_frames, output_path, name_prefix=''):
+def eval_all_folds(nov_reps, classf_reps, eval_frames, val_eval_frames, output_path, name_prefix=''):
 
     classf_rep_avg = output_report_avg(classf_reps, output_path, name_prefix + 'classf_')
     nov_rep_avg = output_report_avg(nov_reps, output_path, name_prefix + 'nov_')
 
     eval_frames_avg, eval_frames_var = frame_avg_var(eval_frames, output_path, name_prefix + 'eval_')
+    val_eval_frames_avg, val_eval_frames_var = frame_avg_var(eval_frames, output_path, name_prefix + 'val_eval_')
 
     noc_areas = np.array([trapezoid_integration(frame.loc['Nov rate'].values.flatten(), frame.loc['Trigger rate'].values.flatten())
                             for frame in eval_frames])
@@ -244,13 +279,16 @@ def eval_all_folds(nov_reps, classf_reps, eval_frames, output_path, name_prefix=
         noc_area_dict = dict(folds=noc_areas, avg=noc_area_avg, var=noc_area_var)
         json.dump(da_utils.cast_to_python(noc_area_dict), json_file, indent=4)
 
-    return nov_rep_avg, classf_rep_avg, eval_frames_avg, eval_frames_var, noc_area_dict
+    return nov_rep_avg, classf_rep_avg, eval_frames_avg, eval_frames_var, val_eval_frames_avg, val_eval_frames_var, noc_area_dict
 
 def evaluate_kfolds(current_dir, model_name, folds, novelty_class):
 
+    results_frames = list()
+    all_labels = list()
     eval_frames = list()
     classf_reps = list()
     nov_reps = list()
+    val_eval_frames = list()
 
     create_dict = True
     fold_count = 1
@@ -306,10 +344,14 @@ def evaluate_kfolds(current_dir, model_name, folds, novelty_class):
                     model_metrics[metric].append(training_log['logs'][metric])
             
             del multi_init, best_init, training_log
-        nov_rep, classf_rep, eval_frame = eval_fold(novelty_class, os.path.join(current_dir, 'results_frame.csv'), current_dir)
+
+        results_frame, nov_rep, classf_rep, eval_frame, val_eval_frame = eval_fold(novelty_class, current_dir, current_dir)
+        all_labels = np.append(all_labels, np.unique(results_frame.loc[:, 'Labels'].values))
+        results_frames.append(results_frame)
         eval_frames.append(eval_frame)
         classf_reps.append(classf_rep)
         nov_reps.append(nov_rep)
+        val_eval_frames.append(val_eval_frame)
 
         fold_count += 1
         current_dir, _ = os.path.split(current_dir)
@@ -324,7 +366,23 @@ def evaluate_kfolds(current_dir, model_name, folds, novelty_class):
         plot_training('loss', model_name, novelty_class, fold_count, model_metrics, current_dir)
 
     threshold = np.array(eval_frame.columns.values.flatten(), dtype=np.float64)
-    nov_rep_avg, classf_rep_avg, eval_frames_avg, eval_frames_var, noc_area_dict = eval_all_folds(nov_reps, classf_reps, eval_frames, current_dir)
+
+    classf_rep_avg = output_report_avg(classf_reps, current_dir, 'classf_')
+    nov_rep_avg = output_report_avg(nov_reps, current_dir, 'nov_')
+
+    eval_frames_avg, eval_frames_var = frame_avg_var(eval_frames, current_dir, 'eval_')
+    val_eval_frames_avg, val_eval_frames_var = frame_avg_var(val_eval_frames, current_dir, 'val_eval_')
+
+    noc_areas = np.array([trapezoid_integration(frame.loc['Nov rate'].values.flatten(), frame.loc['Trigger rate'].values.flatten())
+                            for frame in eval_frames])
+    noc_area_avg = np.sum(noc_areas)/len(noc_areas)
+    noc_area_var = np.var(noc_areas)
+    
+    with open(os.path.join(current_dir, 'noc_area_dict.json'), 'w') as json_file:
+        noc_area_dict = dict(folds=noc_areas, avg=noc_area_avg, var=noc_area_var)
+        json.dump(da_utils.cast_to_python(noc_area_dict), json_file, indent=4)
+    output_hist(results_frames, np.unique(all_labels), out_range=(-1, 1), filepath=os.path.join(current_dir, 'output_hist_all_folds.png'))
+    del results_frame, all_labels
 
     # Confusion matrices
     plot_rep(nov_rep_avg, current_dir, 'nov_')
@@ -374,6 +432,8 @@ def evaluate_kfolds(current_dir, model_name, folds, novelty_class):
     plt.xlim(-1,1)
     errorbar = plt.errorbar(threshold, eval_frames_avg.loc['Nov acc'], yerr=np.sqrt(eval_frames_var.loc['Nov acc']), label='Nov acc', errorevery=20)
     nov_acc_color = errorbar.lines[0].get_color()
+    errorbar = plt.errorbar(threshold, val_eval_frames_avg.loc['Classf acc'], yerr=np.sqrt(val_eval_frames_var.loc['Classf acc']), label='Val acc', errorevery=20)
+    val_classf_acc_color = errorbar.lines[0].get_color()
     errorbar = plt.errorbar(threshold, eval_frames_avg.loc['Classf acc'], yerr=np.sqrt(eval_frames_var.loc['Classf acc']), label='Classf acc', errorevery=20)
     classf_acc_color = errorbar.lines[0].get_color()
     plt.title(f'Novelty class {novelty_class}')
@@ -384,6 +444,7 @@ def evaluate_kfolds(current_dir, model_name, folds, novelty_class):
     zoomed_axis = fig.add_axes([0.17,0.22,0.3,0.3])
     zoomed_axis.grid(color='k', alpha=0.5, linestyle='dashed', linewidth=0.5)
     zoomed_axis.errorbar(threshold, eval_frames_avg.loc['Nov acc'], yerr=np.sqrt(eval_frames_var.loc['Nov acc']), label='Nov acc', errorevery=20, color=nov_acc_color)
+    zoomed_axis.errorbar(threshold, val_eval_frames_avg.loc['Classf acc'], yerr=np.sqrt(val_eval_frames_var.loc['Classf acc']), label='Val acc', errorevery=20, color=val_classf_acc_color)
     zoomed_axis.errorbar(threshold, eval_frames_avg.loc['Classf acc'], yerr=np.sqrt(eval_frames_var.loc['Classf acc']), label='Classf acc', errorevery=20, color=classf_acc_color)
     zoomed_axis.set_ylim(0.5,1.0)
     zoomed_axis.set_xlim(0.5,1)
