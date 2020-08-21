@@ -1,16 +1,20 @@
 import os
+import gc
 import json
 from itertools import product
 
 import numpy as np
 import pandas as pd
+from tensorflow import keras
 import matplotlib.pyplot as plt
 from sklearn.metrics import confusion_matrix
 
 import data_analysis.utils.utils as da_utils
 from data_analysis.neural_networks.training import MultiInitLog
+from data_analysis.utils.lofar_operators import LofarImgSequence, LofarSequence
 from data_analysis.utils.math_utils import trapezoid_integration
 from data_analysis.model_evaluation import novelty_analysis
+from neural_networks import models, utils
 
 def get_avg_err(data):
     avg = np.sum(data, axis=0)/len(data)
@@ -388,35 +392,42 @@ def evaluate_kfolds(current_dir, model_name, folds, novelty_class):
     fig.savefig(fname=os.path.join(current_dir, 'average_acc_curve.png'), dpi=200, format='png')
     plt.close(fig)
 
-def get_val_results_per_novelty(output_dir, datapath, threshold, classes_names, nov_index):
+def get_val_results_per_novelty(output_dir, datapath, model_name, threshold, classes_names, nov_index, windowed):
 
     folds = np.sort(os.listdir(output_dir))
+    split = 0
     for fold in folds:
 
         current_dir = os.path.join(output_dir, fold)
         if not os.path.isdir(current_dir):
             current_dir, _ = os.path.split(current_dir)
             continue
-
+        print(f'At fold {split}')
         datapath = os.path.join(datapath, f'split_{split}.npz')
         data = np.load(datapath, allow_pickle=True)
+        model_architecture = getattr(models, model_name)
 
         if models.expert_commitee in model_architecture.__bases__:
-            model = nn_utils.load_expert_committee(os.path.join(current_dir, 'experts_multi_init_log'), 'val_expert_accuracy', 'max', False)
+            model = utils.load_expert_committee(os.path.join(current_dir, 'experts_multi_init_log'), 'val_expert_accuracy', 'max', False)
         else:
-            log = nn_utils.MultiInitLog.from_json(os.path.join(current_dir, 'multi_init_log.json'))
+            log = utils.MultiInitLog.from_json(os.path.join(current_dir, 'multi_init_log.json'))
             model = log.get_best_model(metric='val_sparse_accuracy', mode='max', training_end=False)
 
-        predictions = model.predict(data['x_val'])
-        novelty_analysis.get_results(predictions=predictions, labels=data['y_val'], threshold=THRESHOLD, 
-                                        classes_names=CLASSES_NAMES, novelty_index=NOV_INDEX,
-                                        filepath=os.path.join(current_dir, 'results_frame.csv'))
+        if windowed:
+            val_set = LofarImgSequence(data['data'], data['x_val'])
+        else:
+            val_set = LofarSequence(data['x_val'])
+
+        predictions = model.predict(val_set)
+        novelty_analysis.get_results(predictions=predictions, labels=data['y_val'], threshold=threshold, 
+                                        classes_names=classes_names, novelty_index=nov_index,
+                                        filepath=os.path.join(current_dir, 'val_results_frame.csv'))
 
         del model, predictions
         
         gc.collect()
         keras.backend.clear_session()
 
-        fold_count += 1
+        split += 1
         current_dir, _ = os.path.split(current_dir)
         datapath, _ = os.path.split(datapath)

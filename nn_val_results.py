@@ -6,11 +6,11 @@ import multiprocessing
 import argparse
 
 import numpy as np
+import tensorflow as tf
 
 from config import setup
-import utils as nn_utils
 _, LOFAR_FOLDER, _ = setup()
-
+from neural_networks import evaluation as nn_evaluation
 from data_analysis.model_evaluation.novelty_analysis import create_threshold
 
 LINES = '--------------------------------------------------------------------\n'
@@ -19,7 +19,11 @@ parser = argparse.ArgumentParser(description='Evaluates the results of a neural 
                                     prog='Neual Network Kfold evaluation')
 parser.add_argument('dir', help='Directory generated from nn_kfold.py with the results and training history')
 
+gpus = gpus = tf.config.experimental.list_physical_devices('GPU')
+for gpu in gpus:
+    tf.config.experimental.set_memory_growth(gpu, True)
 OUTPUT_DIR = parser.parse_args().dir
+PCA = None
 OVERLAP = 0
 WINDOW_SIZE = 10
 STRIDE = 5
@@ -42,9 +46,6 @@ for lofar_params_folder in lofar_params_folders:
     decimation = splitted[5]
     pca = splitted[-3]
     bins = splitted[-1]
-
-    datapath
-
     model_neurons_folders = np.sort(os.listdir(current_dir))
 
     for model_neurons_folder in model_neurons_folders:
@@ -62,11 +63,17 @@ for lofar_params_folder in lofar_params_folders:
             splitted_name.append(string)
         model_name = '_'.join(splitted_name)
         num_neurons = splitted[splitted.index('neurons') + 1]
-        del splitted, splitted_name
+        del splitted_name
 
         if model_name[:3] == 'old':
             current_dir, _ = os.path.split(current_dir)
             continue
+        elif model_name == 'neural_committee':
+            start = splitted.index('committee') + 1
+            end = splitted[:start].index('neurons')
+            input_model = splitted[start:end]
+        else:
+            input_model = model_name
 
         processes = list()
 
@@ -81,33 +88,21 @@ for lofar_params_folder in lofar_params_folders:
             novelty_class = method_novelty_folder[-1]
             nov_index = list(CLASSES_NAMES).index(novelty_class)
             fold_count = 1
-
-            if model_name in NON_WINDOWED_MODELS:
+            if input_model in NON_WINDOWED_MODELS:
+                windowed = True
                 datapath = os.path.join(LOFAR_FOLDER, 
-                                f'lofar_dataset_fft_pts_{fft_pts}_overlap_{overlap}_decimation_{decimation}_pca_{pca_components}_novelty_class_{novelty_class}_norm_l2',
+                                f'lofar_dataset_fft_pts_{fft_pts}_overlap_{OVERLAP}_decimation_{decimation}_pca_{PCA}_novelty_class_{novelty_class}_norm_l2',
                                 f'kfold_{N_FOLDS}_folds', 'vectors')
             else:
+                windowed = False
                 datapath = os.path.join(LOFAR_FOLDER, 
-                                f'lofar_dataset_fft_pts_{fft_pts}_overlap_{overlap}_decimation_{decimation}_pca_{pca_components}_novelty_class_{novelty_class}_norm_l2',
+                                f'lofar_dataset_fft_pts_{fft_pts}_overlap_{OVERLAP}_decimation_{decimation}_pca_{PCA}_novelty_class_{novelty_class}_norm_l2',
                                 f'kfold_{N_FOLDS}_folds', f'window_size_{WINDOW_SIZE}_stride_{STRIDE}')
-
-            processes.append(multiprocessing.Process(target=nn_utils.get_val_results_per_novelty, args=(current_dir, datapath, THRESHOLD, CLASSES_NAMES, nov_index)))
+                                
+            print(LINES + f'fft_pts: {fft_pts}\n decimation: {decimation}\nModel: {model_name}\nNeurons: {num_neurons}\nNovelty class: {novelty_class}\n' + LINES)
+            nn_evaluation.get_val_results_per_novelty(current_dir, datapath, model_name, THRESHOLD, CLASSES_NAMES, nov_index, windowed)
 
             current_dir, _ = os.path.split(current_dir)
-        
-        if __name__ == '__main__':
-            print(LINES + f'fft_pts: {fft_pts}\n decimation: {decimation}\nModel: {model_name}\nNeurons: {num_neurons}\n' + LINES)
-            for p in processes:
-                p.start()
-            
-            for p in processes:
-                p.join()
-
-            for p in processes:
-                p.close()
-            
-            del processes
-            gc.collect()
             
         current_dir, _ = os.path.split(current_dir)
     
