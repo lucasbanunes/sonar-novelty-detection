@@ -240,7 +240,7 @@ def eval_fold(novelty_class, results_path, output_path, name_prefix=''):
     output = results_frame.loc[:,'Neurons'].values
     labels = np.array(results_frame.loc[:, ('Labels', 'L')].values.flatten(), dtype=str)
     classf = np.array(results_frame.iloc[:, 3].values, dtype=str)
-    classes = np.unique(classf)
+    classes = np.unique(np.concatenate((classf, labels[labels != 'Nov'])))
     classes_neurons = {class_: neuron for class_, neuron in zip(classes, range(len(classes)))}
 
     classf_rep = output_report(output[labels != 'Nov'], classf[labels != 'Nov'], labels[labels != 'Nov'], classes_neurons,
