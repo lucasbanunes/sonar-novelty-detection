@@ -43,18 +43,25 @@ for lofar_params_folder in lofar_params_folders:
         
         splitted = model_neurons_folder.split('_')
         splitted_name = list()
+        name_stop = 0
         for string in splitted:
             if string == 'intermediate':
                 break
             splitted_name.append(string)
+            name_stop += 1
         model_name = '_'.join(splitted_name)
         num_neurons = splitted[splitted.index('neurons') + 1]
-        del splitted, splitted_name
+        del splitted_name
 
         if model_name[:3] == 'old':
             current_dir, _ = os.path.split(current_dir)
             continue
-        
+        elif model_name == 'neural_committee':
+            no_name_splitted = splitted[name_stop:]
+            to_join = no_name_splitted[no_name_splitted.index('committee')+1:-1]
+            to_join.append('neural')
+            model_name = '_'.join(to_join)
+
         processes = list()
 
         for method_novelty_folder in method_novelty_folders: #Here We get all the folds (folder with all the folds)
