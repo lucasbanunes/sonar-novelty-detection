@@ -234,6 +234,36 @@ def output_report_avg(reps, output_path, name_prefix=''):
 
     return avg_frame
 
+def plot_acc(threshold, metric_frame, error_frame, val_metric_frame, val_error_frame, fig_title, filename):
+
+    #Average acc curves
+    fig = plt.figure(figsize=(12,3))
+    plt.grid(color='k', alpha=0.5, linestyle='dashed', linewidth=0.5)
+    plt.ylim(0,1)
+    plt.xlim(-1,1)
+    errorbar = plt.errorbar(threshold, metric_frame.loc['Nov acc'], yerr=error_frame.loc['Nov acc'], label='Nov acc', errorevery=20)
+    nov_acc_color = errorbar.lines[0].get_color()
+    errorbar = plt.errorbar(threshold, val_metric_frame.loc['Classf acc'], yerr=val_error_frame.loc['Classf acc'], label='Val acc', errorevery=20)
+    val_classf_acc_color = errorbar.lines[0].get_color()
+    errorbar = plt.errorbar(threshold, metric_frame.loc['Classf acc'], yerr=error_frame.loc['Classf acc'], label='Classf acc', errorevery=20)
+    classf_acc_color = errorbar.lines[0].get_color()
+    plt.title(fig_title)
+    plt.ylabel('Average Accuracy')
+    plt.xlabel('Threshold')
+    plt.legend(loc=4)
+
+    zoomed_axis = fig.add_axes([0.17,0.22,0.3,0.3])
+    zoomed_axis.grid(color='k', alpha=0.5, linestyle='dashed', linewidth=0.5)
+    zoomed_axis.errorbar(threshold, metric_frame.loc['Nov acc'], yerr=error_frame.loc['Nov acc'], label='Nov acc', errorevery=20, color=nov_acc_color)
+    zoomed_axis.errorbar(threshold, val_metric_frame.loc['Classf acc'], yerr=val_error_frame.loc['Classf acc'], label='Val acc', errorevery=20, color=val_classf_acc_color)
+    zoomed_axis.errorbar(threshold, metric_frame.loc['Classf acc'], yerr=error_frame.loc['Classf acc'], label='Classf acc', errorevery=20, color=classf_acc_color)
+    zoomed_axis.set_ylim(0.5,1.0)
+    zoomed_axis.set_xlim(0.5,1)
+    zoomed_axis.set_yticks([0.5, 0.625, 0.75, 0.875, 1.0])
+
+    fig.savefig(fname=filename, dpi=200, format='png')
+    plt.close(fig)
+
 def eval_fold(novelty_class, results_path, output_path, name_prefix=''):
     results_frame = pd.read_csv(os.path.join(results_path, 'results_frame.csv'), header=[0,1])
     
@@ -249,7 +279,7 @@ def eval_fold(novelty_class, results_path, output_path, name_prefix=''):
                                 os.path.join(output_path, name_prefix + 'nov_rep.csv'))
     evaluation_frame = novelty_analysis.evaluate_nov_detection(results_frame, 
                                                 filepath=os.path.join(output_path, name_prefix + 'eval_frame.csv'))
-    val_results_frame = pd.read_csv(os.path.join(results_path, 'results_frame.csv'), header=[0,1])
+    val_results_frame = pd.read_csv(os.path.join(results_path, 'val_results_frame.csv'), header=[0,1])
     val_eval_frame = novelty_analysis.evaluate_nov_detection(val_results_frame, 
                                                 filepath=os.path.join(output_path, name_prefix + 'val_eval_frame.csv'))
 
@@ -452,6 +482,53 @@ def evaluate_kfolds(current_dir, model_name, folds, novelty_class):
 
     fig.savefig(fname=os.path.join(current_dir, 'average_acc_curve.png'), dpi=200, format='png')
     plt.close(fig)
+
+def eval_all_novelties(current_dir):
+
+    start = True
+    novelties = 0
+    for method_novelty_folder in np.sort(os.listdir(current_dir)):
+
+        current_dir = os.path.join(current_dir, method_novelty_folder)
+        if not os.path.isdir(current_dir):
+            current_dir, _ = os.path.split(current_dir)
+            continue
+        
+        nov_avg_frame = pd.read_csv(os.path.join(current_dir, 'eval_frames_avg.csv'), header=0, index_col=0)
+        nov_var_frame = pd.read_csv(os.path.join(current_dir, 'eval_frames_var.csv'), header=0, index_col=0)
+        nov_val_avg_frame = pd.read_csv(os.path.join(current_dir, 'val_eval_frames_avg.csv'), header=0, index_col=0)
+        nov_val_var_frame = pd.read_csv(os.path.join(current_dir, 'val_eval_frames_var.csv'), header=0, index_col=0)
+        #import pdb; pdb.set_trace()
+        novelties += 1
+
+        if start:
+            threshold = np.array(nov_avg_frame.columns, dtype=np.float64)
+            avg_frame = nov_avg_frame
+            error_frame = nov_var_frame
+            val_avg_frame = nov_val_avg_frame
+            val_err_frame = nov_val_var_frame
+            start = False
+        else:
+            avg_frame += nov_avg_frame
+            error_frame += nov_var_frame
+            val_avg_frame += nov_val_avg_frame
+            val_err_frame += nov_val_var_frame
+
+        current_dir, _ = os.path.split(current_dir)
+
+    #import pdb; pdb.set_trace()
+    avg_frame = avg_frame/novelties
+    error_frame = np.sqrt(error_frame)/novelties
+    val_avg_frame = val_avg_frame/novelties
+    val_err_frame = np.sqrt(val_err_frame)/novelties
+
+    avg_frame.to_csv(os.path.join(current_dir, 'novelties_eval_frames_avg.csv'))
+    error_frame.to_csv(os.path.join(current_dir, 'novelties_eval_frames_err.csv'))
+    val_avg_frame.to_csv(os.path.join(current_dir, 'novelties_val_eval_frames_avg.csv'))
+    val_err_frame.to_csv(os.path.join(current_dir, 'novelties_val_eval_frames_err.csv'))
+
+    plot_acc(threshold, avg_frame, error_frame, val_avg_frame, val_err_frame, 
+            fig_title='All Novelties', filename=os.path.join(current_dir, 'novelties_acc_curve.png'))
 
 def get_val_results_per_novelty(output_dir, datapath, model_name, threshold, classes_names, nov_index, windowed):
 
