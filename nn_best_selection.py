@@ -93,3 +93,5 @@ elif file_format == 'xlsx':
     best_frame.to_excel(os.path.join(output_dir, filename+'.xlsx'))
 else:
     raise ValueError(f'Unknown format type: {file_format}')
+
+print('Finished')
