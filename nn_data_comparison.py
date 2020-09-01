@@ -98,6 +98,8 @@ for lofar_params_folder in lofar_params_folders:
             current_dir, _ = os.path.split(current_dir)
 
         data.append(data_per_novelty)
+        if model_name == 'windowed_mlp':
+            model_name = 'wmlp'
         outer_index.append(model_name.capitalize())
         inner_index.append(num_neurons)
 

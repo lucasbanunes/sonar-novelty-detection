@@ -89,12 +89,12 @@ for lofar_params_folder in lofar_params_folders:
             nov_index = list(CLASSES_NAMES).index(novelty_class)
             fold_count = 1
             if input_model in NON_WINDOWED_MODELS:
-                windowed = True
+                windowed = False
                 datapath = os.path.join(LOFAR_FOLDER, 
                                 f'lofar_dataset_fft_pts_{fft_pts}_overlap_{OVERLAP}_decimation_{decimation}_pca_{PCA}_novelty_class_{novelty_class}_norm_l2',
                                 f'kfold_{N_FOLDS}_folds', 'vectors')
             else:
-                windowed = False
+                windowed = True
                 datapath = os.path.join(LOFAR_FOLDER, 
                                 f'lofar_dataset_fft_pts_{fft_pts}_overlap_{OVERLAP}_decimation_{decimation}_pca_{PCA}_novelty_class_{novelty_class}_norm_l2',
                                 f'kfold_{N_FOLDS}_folds', f'window_size_{WINDOW_SIZE}_stride_{STRIDE}')
