@@ -498,7 +498,6 @@ def eval_all_novelties(current_dir):
         nov_var_frame = pd.read_csv(os.path.join(current_dir, 'eval_frames_var.csv'), header=0, index_col=0)
         nov_val_avg_frame = pd.read_csv(os.path.join(current_dir, 'val_eval_frames_avg.csv'), header=0, index_col=0)
         nov_val_var_frame = pd.read_csv(os.path.join(current_dir, 'val_eval_frames_var.csv'), header=0, index_col=0)
-        #import pdb; pdb.set_trace()
         novelties += 1
 
         if start:
@@ -516,7 +515,6 @@ def eval_all_novelties(current_dir):
 
         current_dir, _ = os.path.split(current_dir)
 
-    #import pdb; pdb.set_trace()
     avg_frame = avg_frame/novelties
     error_frame = np.sqrt(error_frame)/novelties
     val_avg_frame = val_avg_frame/novelties

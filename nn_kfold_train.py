@@ -175,7 +175,7 @@ try:
             
             output_dir = os.path.join(base_path, 
                             f'{model_architecture.__name__}_intermediate_neurons_{neurons}_committee_{committee_achitecture.__name__}_neurons_{neurons}', 
-                            f'kfold_novelty_class_{novelty_class}')
+                            f'kfold_novelty_class_{novelty_class}', f'fold_{fold_count}')
             
             multi_inits_experts = os.path.join(base_path, 
                                         f'{committee_achitecture.__name__}_intermediate_neurons_{committee_neurons}', 

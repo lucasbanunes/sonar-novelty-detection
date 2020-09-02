@@ -63,19 +63,18 @@ for lofar_params_folder in lofar_params_folders:
             splitted_name.append(string)
         model_name = '_'.join(splitted_name)
         num_neurons = splitted[splitted.index('neurons') + 1]
-        del splitted_name
 
         if model_name[:3] == 'old':
             current_dir, _ = os.path.split(current_dir)
             continue
         elif model_name == 'neural_committee':
-            start = splitted.index('committee') + 1
-            end = splitted[:start].index('neurons')
-            input_model = splitted[start:end]
+            in_model_splitted = splitted[splitted.index('neurons') + 3:]
+            input_model = '_'.join(in_model_splitted[: in_model_splitted.index('neurons')])
+            input_neurons = in_model_splitted[-1]
         else:
+            current_dir, _ = os.path.split(current_dir)
             input_model = model_name
-
-        processes = list()
+            continue
 
         for method_novelty_folder in method_novelty_folders: #Here We get all the folds (folder with all the folds)
 

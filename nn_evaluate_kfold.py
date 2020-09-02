@@ -57,10 +57,11 @@ for lofar_params_folder in lofar_params_folders:
             current_dir, _ = os.path.split(current_dir)
             continue
         elif model_name == 'neural_committee':
-            no_name_splitted = splitted[name_stop:]
-            to_join = no_name_splitted[no_name_splitted.index('committee')+1:-1]
-            to_join.append('neural')
-            model_name = '_'.join(to_join)
+            start = splitted[len(splitted_name):].index('committee') + 1 + len(splitted_name)
+            end = splitted[start:].index('neurons') + start
+            input_model = '_'.join(splitted[start:end])
+        else:
+            input_model = model_name
 
         processes = list()
 

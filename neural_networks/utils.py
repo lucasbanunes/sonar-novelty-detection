@@ -98,8 +98,9 @@ def load_expert_committee(multi_init_path, metric, mode, training_end, custom_ob
     for expert_log, custom_object in zip(experts_log, custom_objects):
         log = MultiInitLog.from_json(os.path.join(multi_init_path, expert_log))
         expert = log.get_best_model(metric, mode, training_end, custom_object)
-    
-    input_layer = keras.Input(tuple(expert[0].input.shape))
+        experts.append(expert)
+    #import pdb; pdb.set_trace()
+    input_layer = keras.Input(tuple(experts[0].input.shape[1:]))
     experts = [expert(input_layer) for expert in experts]
     output_layer = keras.layers.concatenate(experts)
 
